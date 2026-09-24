@@ -1,0 +1,67 @@
+name: Deploy MyDashboard
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          platforms: linux/amd64
+          tags: ghcr.io/${{ github.repository_owner }}/mydashboard:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+             DATABASE_URL=${{ secrets.DATABASE_URL }}
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to Hetzner
+        uses: appleboy/ssh-action@master
+        with:
+          host: 178.104.20.127
+          username: root
+          password: ${{ secrets.SERVER_PASSWORD }}
+          script: |
+            mkdir -p /opt/apps/mydashboard
+            cd /opt/apps/mydashboard
+            echo ${{ secrets.GITHUB_TOKEN }} | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+            echo "${{ secrets.ENV_CONTENTS }}" > .env
+            
+            cat <<EOF > docker-compose.yml
+            version: '3.8'
+            services:
+              mydashboard-app:
+                image: ghcr.io/${{ github.repository_owner }}/mydashboard:latest
+                container_name: mydashboard-app
+                restart: unless-stopped
+                ports:
+                  - "3010:3000"
+                env_file: .env
+            EOF
+            docker compose up -d --pull always --force-recreate

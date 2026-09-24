@@ -1,0 +1,21 @@
+name: Sync ads & revenue
+
+on:
+  schedule:
+    # 04:15, 10:15, 16:15, 22:15 UTC
+    - cron: "15 4,10,16,22 * * *"
+  workflow_dispatch:
+    inputs:
+      days:
+        description: "Cate zile in urma"
+        default: "3"
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger sync
+        run: |
+          curl -sS --fail-with-body -X POST \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "https://mydashboard.ro/api/cron/sync?days=${{ github.event.inputs.days || '3' }}"

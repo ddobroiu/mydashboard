@@ -1,0 +1,392 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─── Utilizatori & acces ────────────────────────────────────────────────────
+
+model User {
+  id            String       @id @default(cuid())
+  name          String?
+  email         String       @unique
+  emailVerified DateTime?
+  password      String?
+  image         String?
+  isSuperAdmin  Boolean      @default(false)
+  createdAt     DateTime     @default(now())
+  accounts      Account[]
+  sessions      Session[]
+  memberships   Membership[]
+}
+
+// O organizatie = noi (agentia) sau, mai tarziu, un client.
+// Toate datele sunt legate de o organizatie, ca fiecare sa vada doar ce e al lui.
+model Organization {
+  id          String       @id @default(cuid())
+  name        String
+  createdAt   DateTime     @default(now())
+  memberships Membership[]
+  projects    Project[]
+}
+
+enum Role {
+  OWNER
+  ADMIN
+  VIEWER
+}
+
+model Membership {
+  id             String       @id @default(cuid())
+  userId         String
+  organizationId String
+  role           Role         @default(VIEWER)
+  createdAt      DateTime     @default(now())
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, organizationId])
+}
+
+// ─── Proiecte & conexiuni ───────────────────────────────────────────────────
+
+model Project {
+  id             String         @id @default(cuid())
+  organizationId String
+  name           String
+  domain         String?
+  currency       String         @default("RON")
+  // ID public pus in snippet-ul de tracking (data-site); generat la prima deschidere a paginii Tracking
+  trackingId     String?        @unique
+  createdAt      DateTime       @default(now())
+  organization   Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  connections    Connection[]
+  adSpend        AdSpendDaily[]
+  transactions   Transaction[]
+  socialPosts    SocialPost[]
+  invoices       Invoice[]
+  aiUsage        AiUsageDaily[]
+  trackSessions  TrackSession[]
+  trackEvents    TrackEvent[]
+  goals          Goal[]
+  trackedLinks   TrackedLink[]
+
+  @@index([organizationId])
+}
+
+enum Provider {
+  STRIPE
+  META
+  GOOGLE_ADS
+  TIKTOK
+  OBLIO
+  POSTINGCLIPS
+  REPLICATE
+  // Cheltuieli introduse de mana (influenceri, flyere...); o conexiune ascunsa per proiect
+  MANUAL
+}
+
+enum ConnectionStatus {
+  ACTIVE
+  ERROR
+  DISABLED
+}
+
+model Connection {
+  id           String           @id @default(cuid())
+  projectId    String
+  provider     Provider
+  label        String?
+  // ID-ul contului extern: act_123 (Meta), customer id (Google), advertiser id (TikTok), CIF (Oblio)
+  externalId   String?
+  // JSON cu cheile/token-urile, criptat AES-256-GCM (vezi lib/crypto.ts)
+  credentials  String
+  status       ConnectionStatus @default(ACTIVE)
+  lastSyncAt   DateTime?
+  lastError    String?
+  createdAt    DateTime         @default(now())
+  project      Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  adSpend      AdSpendDaily[]
+  transactions Transaction[]
+  socialPosts  SocialPost[]
+  invoices     Invoice[]
+  aiUsage      AiUsageDaily[]
+  syncRuns     SyncRun[]
+
+  @@index([projectId])
+}
+
+// ─── Date sincronizate ──────────────────────────────────────────────────────
+
+// Cheltuiala pe reclame: un rand pe campanie pe zi.
+model AdSpendDaily {
+  id              String     @id @default(cuid())
+  projectId       String
+  connectionId    String
+  provider        Provider
+  date            DateTime   @db.Date
+  campaignId      String
+  campaignName    String
+  currency        String
+  spend           Decimal    @db.Decimal(14, 2)
+  impressions     Int        @default(0)
+  clicks          Int        @default(0)
+  // Ce raporteaza platforma ca achizitii (orientativ, se suprapune intre platforme)
+  conversions     Decimal    @default(0) @db.Decimal(14, 2)
+  conversionValue Decimal    @default(0) @db.Decimal(14, 2)
+  updatedAt       DateTime   @updatedAt
+  project         Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  connection      Connection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+
+  @@unique([connectionId, date, campaignId])
+  @@index([projectId, date])
+}
+
+// Incasari reale (Stripe) si, mai tarziu, facturi (Oblio).
+model Transaction {
+  id           String     @id @default(cuid())
+  projectId    String
+  connectionId String
+  provider     Provider
+  externalId   String
+  occurredAt   DateTime
+  date         DateTime   @db.Date
+  currency     String
+  // Suma incasata minus rambursari
+  amount       Decimal    @db.Decimal(14, 2)
+  customer     String?
+  // Pentru atribuire (faza 2): utm_source, utm_campaign, gclid, fbclid, ttclid
+  utmSource    String?
+  utmCampaign  String?
+  clickId      String?
+  // Vizitatorul din tracking-ul nostru (metadata md_vid sau client_reference_id din Stripe)
+  visitorId    String?
+  // Site-ul pe care s-a facut plata, cand proiectul are mai multe site-uri (ex. grupul print)
+  site         String?
+  project      Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  connection   Connection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+
+  @@unique([connectionId, externalId])
+  @@index([projectId, date])
+}
+
+// Clipurile postate prin PostingClips, cu cifrele citite de pe platforma.
+// Cifrele sunt cumulate pe viata postarii (nu pe zi), asa ca sync-ul rescrie
+// postarile din ultimele 30 de zile ca sa prinda vizualizarile care mai cresc.
+model SocialPost {
+  id           String     @id @default(cuid())
+  projectId    String
+  connectionId String
+  // ID-ul postarii in PostingClips
+  externalId   String
+  // scheduled | published | failed
+  status       String
+  platform     String
+  account      String
+  campaignName String
+  caption      String?
+  url          String?
+  error        String?
+  scheduledAt  DateTime
+  publishedAt  DateTime?
+  // Ziua publicarii (sau a programarii, daca n-a iesit inca), ora Romaniei
+  date         DateTime   @db.Date
+  views        Int?
+  likes        Int?
+  comments     Int?
+  shares       Int?
+  saves        Int?
+  reach        Int?
+  metricsAt    DateTime?
+  updatedAt    DateTime   @updatedAt
+  project      Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  connection   Connection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+
+  @@unique([connectionId, externalId])
+  @@index([projectId, date])
+}
+
+// Facturile emise in Oblio. Mai multe proiecte pot folosi acelasi cont Oblio:
+// fiecare proiect isi vede doar seria lui (ex. 3DV, TBL).
+model Invoice {
+  id           String     @id @default(cuid())
+  projectId    String
+  connectionId String
+  // ID-ul documentului in Oblio
+  externalId   String
+  series       String
+  number       String
+  issueDate    DateTime   @db.Date
+  dueDate      DateTime?  @db.Date
+  total        Decimal    @db.Decimal(14, 2)
+  currency     String
+  canceled     Boolean    @default(false)
+  clientName   String?
+  clientCif    String?
+  clientEmail  String?
+  // Link PDF si starea in SPV (e-Factura)
+  link         String?
+  einvoiceStatus String?
+  project      Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  connection   Connection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+
+  @@unique([connectionId, externalId])
+  @@index([projectId, issueDate])
+}
+
+// Costul AI (Replicate): un rand pe model pe zi. Costul e calculat din durata
+// rularilor x tariful modelului (Replicate nu da pretul prin API), in USD.
+model AiUsageDaily {
+  id           String     @id @default(cuid())
+  projectId    String
+  connectionId String
+  date         DateTime   @db.Date
+  model        String
+  // true pentru modelele care produc modelul 3D (o „generare” pentru client)
+  isGeneration Boolean    @default(false)
+  runs         Int
+  failed       Int        @default(0)
+  seconds      Float
+  costUsd      Decimal    @db.Decimal(12, 4)
+  project      Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  connection   Connection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+
+  @@unique([connectionId, date, model])
+  @@index([projectId, date])
+}
+
+// ─── Tracking propriu (snippet t.js pe site-uri) ────────────────────────────
+
+// O vizita: incepe la prima pagina si se termina dupa 30 de minute fara
+// activitate sau cand omul revine dintr-o alta sursa. Sursa se stabileste la inceput.
+model TrackSession {
+  // Generat in browser (32 de caractere hex)
+  id           String   @id
+  projectId    String
+  visitorId    String
+  startedAt    DateTime @default(now())
+  lastSeenAt   DateTime @default(now())
+  date         DateTime @db.Date
+  landingPath  String
+  referrerHost String?
+  // Ca in Google Analytics: source / medium / campaign
+  source       String
+  medium       String
+  campaign     String?
+  content      String?
+  term         String?
+  // gclid | fbclid | ttclid, daca a venit dintr-o reclama
+  clickType    String?
+  device       String
+  // Domeniul vizitat (fara www), cand acelasi cod de tracking e pe mai multe site-uri
+  host         String?
+  pageviews    Int      @default(1)
+  project      Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, date])
+  @@index([projectId, visitorId])
+}
+
+// Evenimente: pageview, goal (obiectiv atins), purchase (comanda cu valoare),
+// link_click (click pe un link urmarit) sau un eveniment propriu.
+model TrackEvent {
+  id        String   @id @default(cuid())
+  projectId String
+  sessionId String?
+  visitorId String?
+  type      String
+  name      String?
+  path      String?
+  value     Decimal? @db.Decimal(14, 2)
+  currency  String?
+  orderId   String?
+  goalId    String?
+  linkId    String?
+  at        DateTime @default(now())
+  date      DateTime @db.Date
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, date, type])
+  @@index([sessionId])
+}
+
+// Un obiectiv setat din dashboard, fara cod: „adresa paginii contine /multumim”.
+model Goal {
+  id        String   @id @default(cuid())
+  projectId String
+  name      String
+  // Textul cautat in adresa paginii (path + query)
+  pattern   String
+  // Valoare fixa optionala per conversie (ex. un lead = 50 lei)
+  value     Decimal? @db.Decimal(14, 2)
+  createdAt DateTime @default(now())
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+}
+
+// Link scurt urmarit: mydashboard.ro/l/<code> numara click-ul si trimite la
+// destinatie cu parametrii UTM adaugati. Pentru bio, influenceri, flyere, QR.
+model TrackedLink {
+  id          String    @id @default(cuid())
+  projectId   String
+  code        String    @unique
+  name        String
+  // Adresa finala, cu UTM-urile deja puse
+  destination String
+  clicks      Int       @default(0)
+  lastClickAt DateTime?
+  createdAt   DateTime  @default(now())
+  project     Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+}
+
+model SyncRun {
+  id           String     @id @default(cuid())
+  connectionId String
+  startedAt    DateTime   @default(now())
+  finishedAt   DateTime?
+  ok           Boolean?
+  rows         Int        @default(0)
+  error        String?
+  connection   Connection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+
+  @@index([connectionId, startedAt])
+}
+
+// ─── NextAuth ───────────────────────────────────────────────────────────────
+
+model Account {
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([provider, providerAccountId])
+}
+
+model Session {
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String
+  expires    DateTime
+
+  @@id([identifier, token])
+}
