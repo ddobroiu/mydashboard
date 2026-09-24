@@ -18,7 +18,9 @@ if (!email || !password || password.length < 8) {
   process.exit(1);
 }
 
-const prisma = new PrismaClient({ adapter: new PrismaPg(new pg.Pool({ connectionString: process.env.DATABASE_URL })) });
+// Schema din DATABASE_URL (?schema=...), ca in lib/prisma.ts
+const schema = (() => { try { return new URL(process.env.DATABASE_URL).searchParams.get("schema") || undefined; } catch { return undefined; } })();
+const prisma = new PrismaClient({ adapter: new PrismaPg(new pg.Pool({ connectionString: process.env.DATABASE_URL }), { schema }) });
 
 const hash = await bcrypt.hash(password, 12);
 const user = await prisma.user.upsert({

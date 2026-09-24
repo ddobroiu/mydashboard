@@ -46,7 +46,7 @@ jobs:
         with:
           host: 178.104.20.127
           username: root
-          password: ${{ secrets.SERVER_PASSWORD }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
           script: |
             mkdir -p /opt/apps/mydashboard
             cd /opt/apps/mydashboard
