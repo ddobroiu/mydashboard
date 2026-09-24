@@ -3,7 +3,7 @@ name: Sync ads & revenue
 on:
   schedule:
     # 04:15, 10:15, 16:15, 22:15 UTC
-    - cron: "15 4,10,16,22 * * *"
+    - cron: "15 * * * *"
   workflow_dispatch:
     inputs:
       days:
