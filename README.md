@@ -44,8 +44,8 @@ npm run dev
 
 1. Creează baza `mydashboard` în Postgres pe server și rulează local `npx prisma db push` cu `DATABASE_URL` spre ea.
 2. Repo GitHub, apoi secretele: `DATABASE_URL`, `SERVER_PASSWORD`, `ENV_CONTENTS` (tot `.env`-ul de producție), `CRON_SECRET`.
-3. Push pe `main`: imaginea se construiește și rulează pe portul **3010**.
-4. În nginx: `mydashboard.ro` → `127.0.0.1:3010` + certificat SSL.
+3. Push pe `main`: imaginea se construiește și rulează pe portul **3009**.
+4. În nginx: `mydashboard.ro` → `127.0.0.1:3009` + certificat SSL.
 5. `npm run create-admin` cu `DATABASE_URL` de producție.
 
 ⚠️ `ENCRYPTION_KEY` nu se schimbă după ce ai conectat conturi, altfel cheile salvate nu se mai pot decripta.

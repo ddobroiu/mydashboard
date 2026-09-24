@@ -61,7 +61,7 @@ jobs:
                 container_name: mydashboard-app
                 restart: unless-stopped
                 ports:
-                  - "3010:3000"
+                  - "3009:3000"
                 env_file: .env
             EOF
             docker compose up -d --pull always --force-recreate
