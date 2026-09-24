@@ -14,6 +14,7 @@ import { normalizeAccountId, testMeta } from "@/lib/integrations/meta";
 import { testPostingClips } from "@/lib/integrations/postingclips";
 import { testOblio } from "@/lib/integrations/oblio";
 import { testReplicate } from "@/lib/integrations/replicate";
+import { testOrdersDb } from "@/lib/integrations/orders-db";
 import { PROVIDERS } from "@/lib/integrations/types";
 
 export async function logout() {
@@ -81,6 +82,9 @@ export async function addConnection(_prev: string | null, formData: FormData): P
       creds.series = creds.series.toUpperCase();
       const { count } = await testOblio({ email: creds.email, apiSecret: creds.apiSecret, series: creds.series }, externalId);
       label = `seria ${creds.series} · ${count} facturi în ultimul an${creds.asRevenue === "1" ? " · la încasări" : ""}`;
+    } else if (provider === "ORDERS_DB") {
+      const { count } = await testOrdersDb({ connectionString: creds.connectionString, methods: creds.methods });
+      label = `${creds.methods || "Ramburs, OP"} · ${count} comenzi`;
     } else if (provider === "POSTINGCLIPS") {
       const me = await testPostingClips({ apiKey: creds.apiKey });
       label = me.brand ? `${me.brand.name} · ${me.email}` : `${me.email} · toate brandurile`;

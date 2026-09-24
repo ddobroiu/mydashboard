@@ -7,9 +7,10 @@ import { fetchMetaSpend, type MetaCredentials } from "@/lib/integrations/meta";
 import { fetchPostingClipsPosts, type PostingClipsCredentials } from "@/lib/integrations/postingclips";
 import { fetchOblioInvoices, type InvoiceRow, type OblioCredentials } from "@/lib/integrations/oblio";
 import { fetchReplicateUsage, type AiUsageRow, type ReplicateCredentials } from "@/lib/integrations/replicate";
+import { fetchDbOrders, type OrdersDbCredentials } from "@/lib/integrations/orders-db";
 import type { AdSpendRow, SocialPostRow, TransactionRow } from "@/lib/integrations/types";
 
-export const SYNCABLE = ["STRIPE", "META", "POSTINGCLIPS", "OBLIO", "REPLICATE"] as const;
+export const SYNCABLE = ["STRIPE", "META", "POSTINGCLIPS", "OBLIO", "REPLICATE", "ORDERS_DB"] as const;
 
 // Vizualizarile unui clip mai cresc cam o luna dupa postare (si PostingClips
 // le reciteste tot 30 de zile), asa ca rescriem mereu cel putin atat.
@@ -138,6 +139,11 @@ async function runProvider(conn: Connection, since: string, until: string): Prom
     case "REPLICATE": {
       const rows = await fetchReplicateUsage(decryptJson<ReplicateCredentials>(conn.credentials), since, until);
       await replaceAiUsage(conn, since, until, rows);
+      return rows.length;
+    }
+    case "ORDERS_DB": {
+      const rows = await fetchDbOrders(decryptJson<OrdersDbCredentials>(conn.credentials), since, until);
+      await replaceTransactions(conn, since, until, rows);
       return rows.length;
     }
     case "OBLIO": {

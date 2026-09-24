@@ -126,6 +126,20 @@ export const PROVIDERS: ProviderInfo[] = [
       },
     ],
   },
+  {
+    provider: "ORDERS_DB",
+    name: "Comenzi ramburs / transfer",
+    kind: "revenue",
+    available: true,
+    fields: [
+      {
+        key: "connectionString",
+        label: "Baza de date a magazinului (utilizator doar de citire)",
+        hint: "postgresql://utilizator:parola@server:5432/baza. Se citesc doar comenzile neanulate; plățile cu cardul vin din Stripe.",
+      },
+      { key: "methods", label: "Metode de plată incluse (opțional)", type: "text", hint: "Implicit: Ramburs, OP" },
+    ],
+  },
   { provider: "GOOGLE_ADS", name: "Google Ads", kind: "ads", available: false, fields: [] },
   { provider: "TIKTOK", name: "TikTok Ads", kind: "ads", available: false, fields: [] },
   {

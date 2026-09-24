@@ -84,6 +84,8 @@ enum Provider {
   OBLIO
   POSTINGCLIPS
   REPLICATE
+  // Comenzi ramburs / transfer bancar citite din baza de date a magazinului
+  ORDERS_DB
   // Cheltuieli introduse de mana (influenceri, flyere...); o conexiune ascunsa per proiect
   MANUAL
 }
