@@ -67,7 +67,7 @@ export default async function ProjectPage({
       <CampaignTable campaigns={m.campaigns} currency={project.currency} />
       {hasSocial && <SocialSection s={social} />}
       {hasAi && <AiCostSection ai={ai} revenue={m.revenue} currency={project.currency} />}
-      {hasInvoices && <InvoicesSection inv={invoices} />}
+      {hasInvoices && <InvoicesSection inv={invoices} projectId={project.id} canEdit={role !== "VIEWER"} />}
       <ConnectionsPanel projectId={project.id} connections={connections} canEdit={role !== "VIEWER"} />
     </div>
   );

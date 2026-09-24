@@ -231,6 +231,8 @@ model Invoice {
   // Link PDF si starea in SPV (e-Factura)
   link         String?
   einvoiceStatus String?
+  // Codul Oblio: -1 netrimisa, 0 in procesare in SPV, 1 trimisa, 2 erori
+  einvoiceCode   Int?
   project      Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
   connection   Connection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
 

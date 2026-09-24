@@ -5,14 +5,14 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import type { Provider } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { encryptJson } from "@/lib/crypto";
+import { decryptJson, encryptJson } from "@/lib/crypto";
 import { adminOrganizations, requireProject, requireUser } from "@/lib/access";
 import { signOut } from "@/auth";
 import { SYNCABLE, syncConnection } from "@/lib/sync";
 import { testStripe } from "@/lib/integrations/stripe";
 import { normalizeAccountId, testMeta } from "@/lib/integrations/meta";
 import { testPostingClips } from "@/lib/integrations/postingclips";
-import { testOblio } from "@/lib/integrations/oblio";
+import { sendOblioEinvoice, testOblio, type OblioCredentials } from "@/lib/integrations/oblio";
 import { testReplicate } from "@/lib/integrations/replicate";
 import { testOrdersDb } from "@/lib/integrations/orders-db";
 import { PROVIDERS } from "@/lib/integrations/types";
@@ -122,4 +122,30 @@ export async function deleteConnection(formData: FormData) {
   await requireProject(conn.projectId, "ADMIN");
   await prisma.connection.delete({ where: { id: connectionId } });
   revalidatePath(`/dashboard/projects/${conn.projectId}`);
+}
+
+// Trimite in SPV (e-Factura) prin Oblio o factura (invoiceId) sau toate cele netrimise / cu erori ale proiectului
+export async function sendInvoicesToSpv(formData: FormData) {
+  const projectId = String(formData.get("projectId"));
+  const invoiceId = formData.get("invoiceId") ? String(formData.get("invoiceId")) : null;
+  await requireProject(projectId, "ADMIN");
+  const invoices = await prisma.invoice.findMany({
+    where: invoiceId
+      ? { id: invoiceId, projectId }
+      : { projectId, canceled: false, einvoiceCode: { in: [-1, 2] } },
+    orderBy: { issueDate: "asc" },
+    take: 50,
+    include: { connection: { select: { credentials: true, externalId: true } } },
+  });
+  for (const inv of invoices) {
+    try {
+      const creds = decryptJson<OblioCredentials>(inv.connection.credentials);
+      const r = await sendOblioEinvoice(creds, inv.connection.externalId ?? "", inv.series, inv.number);
+      await prisma.invoice.update({ where: { id: inv.id }, data: { einvoiceStatus: r.text, einvoiceCode: r.code } });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      await prisma.invoice.update({ where: { id: inv.id }, data: { einvoiceStatus: `Eroare: ${msg}`.slice(0, 190), einvoiceCode: 2 } });
+    }
+  }
+  revalidatePath(`/dashboard/projects/${projectId}`);
 }

@@ -2,15 +2,26 @@ import { ExternalLink } from "lucide-react";
 import { formatMoney } from "@/lib/metrics";
 import type { Invoices } from "@/lib/invoices";
 import { Tile } from "./KpiTiles";
+import { sendInvoicesToSpv } from "@/app/dashboard/actions";
 
 const fmtDay = (d: Date) => d.toISOString().slice(0, 10).split("-").reverse().join(".");
 
-export function InvoicesSection({ inv }: { inv: Invoices }) {
+export function InvoicesSection({ inv, projectId, canEdit }: { inv: Invoices; projectId: string; canEdit: boolean }) {
   return (
     <section className="space-y-3">
-      <div>
-        <h2 className="text-lg font-semibold">Facturi</h2>
-        <p className="text-xs text-text-3">Din Oblio, doar seria acestui proiect.</p>
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-semibold">Facturi</h2>
+          <p className="text-xs text-text-3">Din Oblio, doar seria acestui proiect.</p>
+        </div>
+        {canEdit && inv.spvPending > 0 && (
+          <form action={sendInvoicesToSpv}>
+            <input type="hidden" name="projectId" value={projectId} />
+            <button className="rounded-md border border-border px-3 py-1.5 text-xs hover:bg-surface">
+              Trimite în SPV toate netrimisele ({inv.spvPending})
+            </button>
+          </form>
+        )}
       </div>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <Tile label="Facturi emise" value={inv.count.toLocaleString("ro-RO")} sub={inv.canceled ? `${inv.canceled} anulate` : "niciuna anulată"} />
@@ -53,7 +64,16 @@ export function InvoicesSection({ inv }: { inv: Invoices }) {
                       {r.clientCif && <span className="text-xs text-text-3"> · {r.clientCif}</span>}
                     </td>
                     <td className="py-2 pl-4 text-right whitespace-nowrap">{formatMoney(r.total, r.currency)}</td>
-                    <td className="py-2 pl-4 text-xs text-text-2">{r.canceled ? "anulată" : (r.einvoiceStatus ?? "–")}</td>
+                    <td className="py-2 pl-4 text-xs text-text-2">
+                      {r.canceled ? "anulată" : (r.einvoiceStatus ?? "–")}
+                      {canEdit && !r.canceled && (r.einvoiceCode === -1 || r.einvoiceCode === 2) && (
+                        <form action={sendInvoicesToSpv} className="inline">
+                          <input type="hidden" name="projectId" value={projectId} />
+                          <input type="hidden" name="invoiceId" value={r.id} />
+                          <button className="ml-2 text-accent hover:underline">Trimite în SPV</button>
+                        </form>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>

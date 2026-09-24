@@ -26,6 +26,7 @@ export type InvoiceRow = {
   clientEmail: string | null;
   link: string | null;
   einvoiceStatus: string | null;
+  einvoiceCode: number | null;
 };
 
 const BASE = "https://www.oblio.eu/api";
@@ -41,7 +42,7 @@ type OblioInvoice = {
   draft?: string | number;
   canceled?: string | number;
   link?: string;
-  einvoiceStatus?: { text?: string } | null;
+  einvoiceStatus?: { text?: string; code?: number | string } | null;
   client?: { name?: string; cif?: string; email?: string } | null;
 };
 
@@ -97,5 +98,22 @@ export async function fetchOblioInvoices(c: OblioCredentials, cif: string, since
     clientEmail: r.client?.email || null,
     link: r.link || null,
     einvoiceStatus: r.einvoiceStatus?.text || null,
+    einvoiceCode: r.einvoiceStatus?.code === undefined || r.einvoiceStatus?.code === null ? null : Number(r.einvoiceStatus.code),
   }));
+}
+
+// Trimite o factura in SPV (e-Factura) prin Oblio. Raspunsul are text + cod (vezi einvoiceCode).
+export async function sendOblioEinvoice(c: OblioCredentials, cif: string, series: string, number: string) {
+  const auth = await token(c);
+  const res = await fetch(`${BASE}/docs/einvoice`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${auth}`, "content-type": "application/json" },
+    body: JSON.stringify({ cif, seriesName: series, number }),
+    cache: "no-store",
+  });
+  const body = (await res.json().catch(() => ({}))) as { status?: number; statusMessage?: string; data?: { text?: string; code?: number | string } };
+  if (!res.ok || (body.status && body.status !== 200)) {
+    throw new Error(body.statusMessage || `Oblio a raspuns ${res.status}`);
+  }
+  return { text: body.data?.text ?? "Trimisa", code: body.data?.code === undefined ? 0 : Number(body.data.code) };
 }
