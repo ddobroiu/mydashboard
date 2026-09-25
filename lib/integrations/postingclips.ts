@@ -13,6 +13,8 @@ type ApiPost = {
   platform: string;
   account: string;
   campaignName: string;
+  videoId?: string;
+  videoUrl?: string | null;
   caption: string | null;
   url: string | null;
   error: string | null;
@@ -50,6 +52,8 @@ export async function fetchPostingClipsPosts(c: PostingClipsCredentials, since: 
     platform: p.platform,
     account: p.account,
     campaignName: p.campaignName,
+    videoId: p.videoId ?? null,
+    videoUrl: p.videoUrl ?? null,
     caption: p.caption,
     url: p.url,
     error: p.error,

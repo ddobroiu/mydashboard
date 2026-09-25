@@ -32,6 +32,8 @@ export type SocialPostRow = {
   platform: string;
   account: string;
   campaignName: string;
+  videoId: string | null;
+  videoUrl: string | null;
   caption: string | null;
   url: string | null;
   error: string | null;

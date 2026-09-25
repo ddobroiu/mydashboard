@@ -1,5 +1,5 @@
 import { ExternalLink } from "lucide-react";
-import type { SocialGroup, SocialMetrics } from "@/lib/social";
+import type { ClipStat, SocialGroup, SocialMetrics } from "@/lib/social";
 import { Tile } from "./KpiTiles";
 import { ViewsChart } from "./ViewsChart";
 
@@ -54,6 +54,80 @@ function GroupTable({ title, rows, label }: { title: string; rows: SocialGroup[]
   );
 }
 
+// Ce clip a prins: fiecare clip adunat pe toate platformele, cu eticheta „Câștigător”
+function ClipsTable({ clips, median }: { clips: ClipStat[]; median: number }) {
+  const winners = clips.filter((c) => c.winner).length;
+  return (
+    <div className="card p-4">
+      <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+        <h2 className="font-medium">Ce clip a prins</h2>
+        <p className="text-xs text-text-3">
+          {winners > 0
+            ? `${winners} ${winners === 1 ? "clip câștigător" : "clipuri câștigătoare"} · `
+            : ""}
+          Câștigător = cel puțin dublul unui clip obișnuit ({fmt(median)} vizualizări) și minimum 300
+        </p>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[720px] text-sm tabular">
+          <thead className="text-text-3 text-left">
+            <tr>
+              <th className="py-2 font-normal">Clip</th>
+              <th className="py-2 pl-4 font-normal">Postat pe</th>
+              <th className="py-2 pl-4 font-normal text-right">Vizualizări</th>
+              <th className="py-2 pl-4 font-normal text-right">Aprecieri</th>
+              <th className="py-2 pl-4 font-normal text-right">Comentarii</th>
+              <th className="py-2 pl-4 font-normal text-right">Interacțiune</th>
+            </tr>
+          </thead>
+          <tbody>
+            {clips.map((c) => (
+              <tr key={c.key} className="border-t border-border align-top">
+                <td className="py-2 pr-4">
+                  <div className="flex items-start gap-2">
+                    {c.winner && (
+                      <span className="mt-0.5 shrink-0 rounded bg-accent/15 px-1.5 py-0.5 text-[11px] font-medium text-accent">
+                        Câștigător
+                      </span>
+                    )}
+                    <div className="font-medium line-clamp-2">{c.caption || c.campaignName}</div>
+                  </div>
+                  <div className="text-xs text-text-3">
+                    {c.campaignName} · {fmtDay(c.firstDate)}
+                    {c.videoUrl && (
+                      <a href={c.videoUrl} target="_blank" rel="noreferrer" className="ml-2 inline-flex items-center gap-0.5 text-accent">
+                        vezi clipul <ExternalLink size={11} />
+                      </a>
+                    )}
+                  </div>
+                </td>
+                <td className="py-2 pl-4 text-xs">
+                  {c.posts.map((p, i) => (
+                    <div key={i} className="whitespace-nowrap">
+                      {p.url ? (
+                        <a href={p.url} target="_blank" rel="noreferrer" className="text-accent">
+                          {platformName(p.platform)}
+                        </a>
+                      ) : (
+                        platformName(p.platform)
+                      )}
+                      <span className="text-text-3"> {fmt(p.views)}</span>
+                    </div>
+                  ))}
+                </td>
+                <td className="py-2 pl-4 text-right font-medium">{fmt(c.views)}</td>
+                <td className="py-2 pl-4 text-right">{fmt(c.likes)}</td>
+                <td className="py-2 pl-4 text-right">{fmt(c.comments)}</td>
+                <td className="py-2 pl-4 text-right">{c.engagement === null ? "–" : `${c.engagement.toLocaleString("ro-RO")}%`}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 export function SocialSection({ s }: { s: SocialMetrics }) {
   return (
     <section className="space-y-3">
@@ -94,50 +168,7 @@ export function SocialSection({ s }: { s: SocialMetrics }) {
             <GroupTable title="Pe campanie" rows={s.byCampaign} label={(k) => k} />
           </div>
 
-          <div className="card p-4">
-            <h2 className="font-medium mb-3">Cele mai văzute clipuri</h2>
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[680px] text-sm tabular">
-                <thead className="text-text-3 text-left">
-                  <tr>
-                    <th className="py-2 font-normal">Clip</th>
-                    <th className="py-2 pl-4 font-normal">Publicat</th>
-                    <th className="py-2 pl-4 font-normal text-right">Vizualizări</th>
-                    <th className="py-2 pl-4 font-normal text-right">Aprecieri</th>
-                    <th className="py-2 pl-4 font-normal text-right">Comentarii</th>
-                    <th className="py-2 pl-4 font-normal text-right">Distribuiri</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {s.top.map((p) => (
-                    <tr key={p.id} className="border-t border-border align-top">
-                      <td className="py-2 pr-4">
-                        <div className="font-medium line-clamp-2">{p.caption || p.campaignName}</div>
-                        <div className="text-xs text-text-3">
-                          {platformName(p.platform)} · {p.account} · {p.campaignName}
-                          {p.url && (
-                            <a
-                              href={p.url}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="ml-2 inline-flex items-center gap-0.5 text-accent"
-                            >
-                              deschide <ExternalLink size={11} />
-                            </a>
-                          )}
-                        </div>
-                      </td>
-                      <td className="py-2 pl-4 whitespace-nowrap">{fmtDay(p.date)}</td>
-                      <td className="py-2 pl-4 text-right">{fmt(p.views)}</td>
-                      <td className="py-2 pl-4 text-right">{fmt(p.likes)}</td>
-                      <td className="py-2 pl-4 text-right">{fmt(p.comments)}</td>
-                      <td className="py-2 pl-4 text-right">{fmt(p.shares)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
+          <ClipsTable clips={s.clips} median={s.clipMedianViews} />
         </>
       )}
     </section>

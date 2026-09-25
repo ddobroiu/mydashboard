@@ -188,6 +188,10 @@ model SocialPost {
   platform     String
   account      String
   campaignName String
+  // Clipul din PostingClips: acelasi clip postat pe mai multe platforme are acelasi videoId
+  videoId      String?
+  // Fisierul video (pentru reclame)
+  videoUrl     String?
   caption      String?
   url          String?
   error        String?

@@ -12,18 +12,22 @@ export type SocialGroup = {
   shares: number;
 };
 
-export type TopPost = {
-  id: string;
-  platform: string;
-  account: string;
+// Un clip adunat pe toate platformele pe care a fost postat
+export type ClipStat = {
+  key: string;
   campaignName: string;
   caption: string | null;
-  url: string | null;
-  date: string;
-  views: number | null;
-  likes: number | null;
-  comments: number | null;
-  shares: number | null;
+  videoUrl: string | null;
+  firstDate: string;
+  views: number;
+  likes: number;
+  comments: number;
+  shares: number;
+  // (aprecieri + comentarii + distribuiri) / vizualizari, in procente
+  engagement: number | null;
+  posts: { platform: string; account: string; url: string | null; views: number | null }[];
+  // A prins: peste dublul mediei clipurilor din perioada (vezi WINNER_*)
+  winner: boolean;
 };
 
 export type SocialMetrics = {
@@ -40,8 +44,89 @@ export type SocialMetrics = {
   daily: SocialDaily[];
   byPlatform: SocialGroup[];
   byCampaign: SocialGroup[];
-  top: TopPost[];
+  clips: ClipStat[];
+  // Media vizualizarilor pe clip (clipurile cu cifre), pragul pentru „Câștigător”
+  clipMedianViews: number;
 };
+
+// Un clip e „Câștigător” cand are cel putin de 2 ori media (mediana) clipurilor
+// din perioada si macar 300 de vizualizari; cu mai putin de 3 clipuri nu comparam.
+const WINNER_FACTOR = 2;
+const WINNER_MIN_VIEWS = 300;
+const WINNER_MIN_CLIPS = 3;
+
+type PostForClip = {
+  id: string;
+  videoId: string | null;
+  videoUrl: string | null;
+  campaignName: string;
+  caption: string | null;
+  platform: string;
+  account: string;
+  url: string | null;
+  date: Date;
+  views: number | null;
+  likes: number | null;
+  comments: number | null;
+  shares: number | null;
+};
+
+function median(values: number[]) {
+  if (values.length === 0) return 0;
+  const s = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(s.length / 2);
+  return s.length % 2 ? s[mid] : Math.round((s[mid - 1] + s[mid]) / 2);
+}
+
+export function aggregateClips(posts: PostForClip[]): { clips: ClipStat[]; median: number } {
+  const map = new Map<string, ClipStat & { hasMetrics: boolean }>();
+  for (const p of posts) {
+    const key = p.videoId ?? p.id;
+    const date = p.date.toISOString().slice(0, 10);
+    const c = map.get(key) ?? {
+      key,
+      campaignName: p.campaignName,
+      caption: p.caption,
+      videoUrl: p.videoUrl,
+      firstDate: date,
+      views: 0,
+      likes: 0,
+      comments: 0,
+      shares: 0,
+      engagement: null,
+      posts: [],
+      winner: false,
+      hasMetrics: false,
+    };
+    c.views += num(p.views);
+    c.likes += num(p.likes);
+    c.comments += num(p.comments);
+    c.shares += num(p.shares);
+    c.hasMetrics ||= p.views !== null;
+    c.caption ??= p.caption;
+    c.videoUrl ??= p.videoUrl;
+    if (date < c.firstDate) c.firstDate = date;
+    c.posts.push({ platform: p.platform, account: p.account, url: p.url, views: p.views });
+    map.set(key, c);
+  }
+
+  const all = [...map.values()];
+  const measured = all.filter((c) => c.hasMetrics);
+  const med = median(measured.map((c) => c.views));
+  const clips = all
+    .map(({ hasMetrics, ...c }) => ({
+      ...c,
+      engagement: c.views > 0 ? Math.round(((c.likes + c.comments + c.shares) / c.views) * 1000) / 10 : null,
+      winner:
+        hasMetrics &&
+        measured.length >= WINNER_MIN_CLIPS &&
+        c.views >= WINNER_MIN_VIEWS &&
+        c.views >= med * WINNER_FACTOR,
+      posts: c.posts.sort((a, b) => num(b.views) - num(a.views)),
+    }))
+    .sort((a, b) => b.views - a.views || b.likes - a.likes);
+  return { clips, median: med };
+}
 
 const num = (v: number | null | undefined) => v ?? 0;
 
@@ -79,7 +164,11 @@ export async function getSocialMetrics(projectIds: string[], since: string, unti
     byDay.set(date, d);
   }
 
+  const { clips, median: clipMedianViews } = aggregateClips(posts);
+
   return {
+    clips: clips.slice(0, 20),
+    clipMedianViews,
     published: posts.length,
     failed,
     upcoming,
@@ -91,21 +180,5 @@ export async function getSocialMetrics(projectIds: string[], since: string, unti
     daily: eachDay(since, until).map((date) => byDay.get(date) ?? { date, posts: 0, views: 0 }),
     byPlatform: group(posts.map((p) => ({ ...p, key: p.platform }))),
     byCampaign: group(posts.map((p) => ({ ...p, key: p.campaignName }))),
-    top: [...posts]
-      .sort((a, b) => num(b.views) - num(a.views) || num(b.likes) - num(a.likes))
-      .slice(0, 10)
-      .map((p) => ({
-        id: p.id,
-        platform: p.platform,
-        account: p.account,
-        campaignName: p.campaignName,
-        caption: p.caption,
-        url: p.url,
-        date: p.date.toISOString().slice(0, 10),
-        views: p.views,
-        likes: p.likes,
-        comments: p.comments,
-        shares: p.shares,
-      })),
   };
 }
