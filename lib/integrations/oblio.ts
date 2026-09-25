@@ -83,7 +83,7 @@ export async function testOblio(c: OblioCredentials, cif: string) {
 }
 
 export async function fetchOblioInvoices(c: OblioCredentials, cif: string, since: string, until: string): Promise<InvoiceRow[]> {
-  const rows = await list(c, { cif, seriesName: c.series, issuedAfter: since, issuedBefore: until, draft: "0", canceled: "-1" });
+  const rows = await list(c, { cif, seriesName: c.series, issuedAfter: since, issuedBefore: until, draft: "0", canceled: "-1", withEinvoiceStatus: "1" });
   return rows.map((r) => ({
     externalId: String(r.id),
     series: r.seriesName,
