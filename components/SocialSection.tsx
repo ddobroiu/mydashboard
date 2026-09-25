@@ -1,5 +1,6 @@
 import { ExternalLink } from "lucide-react";
 import type { ClipStat, SocialGroup, SocialMetrics } from "@/lib/social";
+import { formatMoney } from "@/lib/metrics";
 import { Tile } from "./KpiTiles";
 import { ViewsChart } from "./ViewsChart";
 
@@ -55,7 +56,7 @@ function GroupTable({ title, rows, label }: { title: string; rows: SocialGroup[]
 }
 
 // Ce clip a prins: fiecare clip adunat pe toate platformele, cu eticheta „Câștigător”
-function ClipsTable({ clips, median }: { clips: ClipStat[]; median: number }) {
+function ClipsTable({ clips, median, adSpend, currency }: { clips: ClipStat[]; median: number; adSpend: number; currency: string }) {
   const winners = clips.filter((c) => c.winner).length;
   return (
     <div className="card p-4">
@@ -66,10 +67,11 @@ function ClipsTable({ clips, median }: { clips: ClipStat[]; median: number }) {
             ? `${winners} ${winners === 1 ? "clip câștigător" : "clipuri câștigătoare"} · `
             : ""}
           Câștigător = cel puțin dublul unui clip obișnuit ({fmt(median)} vizualizări) și minimum 300
+          {adSpend > 0 && ` · reclame pe clipuri: ${formatMoney(adSpend, currency)}`}
         </p>
       </div>
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[720px] text-sm tabular">
+        <table className="w-full min-w-[880px] text-sm tabular">
           <thead className="text-text-3 text-left">
             <tr>
               <th className="py-2 font-normal">Clip</th>
@@ -78,6 +80,8 @@ function ClipsTable({ clips, median }: { clips: ClipStat[]; median: number }) {
               <th className="py-2 pl-4 font-normal text-right">Aprecieri</th>
               <th className="py-2 pl-4 font-normal text-right">Comentarii</th>
               <th className="py-2 pl-4 font-normal text-right">Interacțiune</th>
+              <th className="py-2 pl-4 font-normal text-right">Reclamă</th>
+              <th className="py-2 pl-4 font-normal text-right">Cost / 1000 viz.</th>
             </tr>
           </thead>
           <tbody>
@@ -119,6 +123,8 @@ function ClipsTable({ clips, median }: { clips: ClipStat[]; median: number }) {
                 <td className="py-2 pl-4 text-right">{fmt(c.likes)}</td>
                 <td className="py-2 pl-4 text-right">{fmt(c.comments)}</td>
                 <td className="py-2 pl-4 text-right">{c.engagement === null ? "–" : `${c.engagement.toLocaleString("ro-RO")}%`}</td>
+                <td className="py-2 pl-4 text-right">{c.adSpend > 0 ? formatMoney(c.adSpend, currency) : "–"}</td>
+                <td className="py-2 pl-4 text-right">{c.costPer1000 === null ? "–" : formatMoney(c.costPer1000, currency)}</td>
               </tr>
             ))}
           </tbody>
@@ -128,7 +134,7 @@ function ClipsTable({ clips, median }: { clips: ClipStat[]; median: number }) {
   );
 }
 
-export function SocialSection({ s }: { s: SocialMetrics }) {
+export function SocialSection({ s, currency }: { s: SocialMetrics; currency: string }) {
   return (
     <section className="space-y-3">
       <div>
@@ -168,7 +174,7 @@ export function SocialSection({ s }: { s: SocialMetrics }) {
             <GroupTable title="Pe campanie" rows={s.byCampaign} label={(k) => k} />
           </div>
 
-          <ClipsTable clips={s.clips} median={s.clipMedianViews} />
+          <ClipsTable clips={s.clips} median={s.clipMedianViews} adSpend={s.clipAdSpend} currency={currency} />
         </>
       )}
     </section>

@@ -1,6 +1,18 @@
 import type { AdSpendRow } from "./types";
 
-export type MetaCredentials = { accessToken: string };
+// project: cont de reclame comun mai multor proiecte; doar campaniile cu „[project]” in nume
+export type MetaCredentials = { accessToken: string; project?: string };
+
+// Campaniile care promoveaza un clip PostingClips au in nume „clip:<videoId>”
+// (le pune butonul „Fă reclamă”; se poate scrie si de mana in Ads Manager).
+export function clipIdFromName(name: string) {
+  return name.match(/clip:([a-z0-9]{8,})/i)?.[1] ?? null;
+}
+
+export function matchesProject(name: string, project?: string) {
+  const tag = project?.trim().toLowerCase();
+  return !tag || name.toLowerCase().includes(`[${tag}]`);
+}
 
 const VERSION = process.env.META_API_VERSION || "v23.0";
 const BASE = `https://graph.facebook.com/${VERSION}`;
@@ -66,10 +78,12 @@ export async function fetchMetaSpend(c: MetaCredentials, accountId: string, sinc
   while (url) {
     const page: { data: InsightRow[]; paging?: { next?: string } } = await graph(url);
     for (const r of page.data) {
+      if (!matchesProject(r.campaign_name, c.project)) continue;
       rows.push({
         date: r.date_start,
         campaignId: r.campaign_id,
         campaignName: r.campaign_name,
+        clipId: clipIdFromName(r.campaign_name),
         currency: r.account_currency,
         spend: Number(r.spend ?? 0),
         impressions: Number(r.impressions ?? 0),

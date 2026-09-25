@@ -6,7 +6,7 @@ export const PROJECT_TABS = [
   { key: "reclame", label: "Reclame" },
   { key: "social", label: "Social" },
   { key: "facturi", label: "Facturi" },
-  { key: "costuri", label: "Costuri AI" },
+  { key: "costuri", label: "Costuri" },
   { key: "conexiuni", label: "Conexiuni" },
 ] as const;
 

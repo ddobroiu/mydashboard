@@ -131,6 +131,8 @@ model AdSpendDaily {
   date            DateTime   @db.Date
   campaignId      String
   campaignName    String
+  // Clipul promovat (videoId din PostingClips), din eticheta „clip:<id>” din numele campaniei
+  clipId          String?
   currency        String
   spend           Decimal    @db.Decimal(14, 2)
   impressions     Int        @default(0)

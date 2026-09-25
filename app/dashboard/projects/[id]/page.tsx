@@ -14,6 +14,7 @@ import { getTraffic } from "@/lib/tracking/report";
 import { InvoicesSection } from "@/components/InvoicesSection";
 import { getInvoices } from "@/lib/invoices";
 import { AiCostSection } from "@/components/AiCostSection";
+import { CostSummary } from "@/components/CostSummary";
 import { getAiCosts } from "@/lib/ai-costs";
 import { SitesSection } from "@/components/SitesSection";
 import { getSites } from "@/lib/sites";
@@ -77,7 +78,7 @@ export default async function ProjectPage({
       {tab === "reclame" && <CampaignTable campaigns={m.campaigns} currency={project.currency} />}
       {tab === "social" &&
         (hasSocial ? (
-          <SocialSection s={social} />
+          <SocialSection s={social} currency={project.currency} />
         ) : (
           <NotConnected
             title="Clipuri social media"
@@ -97,17 +98,19 @@ export default async function ProjectPage({
             days={days}
           />
         ))}
-      {tab === "costuri" &&
-        (hasAi ? (
-          <AiCostSection ai={ai} revenue={m.revenue} currency={project.currency} />
-        ) : (
-          <NotConnected
-            title="Costuri AI"
-            text="Leagă Replicate (cu modelele proiectului) ca să vezi cât costă generările și cât rămâne din încasări."
-            basePath={base}
-            days={days}
+      {tab === "costuri" && (
+        <>
+          <CostSummary
+            adSpend={m.spend}
+            byProvider={m.byProvider}
+            clipAdSpend={social.clipAdSpend}
+            aiUsd={hasAi ? ai.costUsd : null}
+            revenue={m.revenue}
+            currency={project.currency}
           />
-        ))}
+          {hasAi && <AiCostSection ai={ai} revenue={m.revenue} currency={project.currency} />}
+        </>
+      )}
       {tab === "conexiuni" && <ConnectionsPanel projectId={project.id} connections={connections} canEdit={role !== "VIEWER"} />}
     </div>
   );

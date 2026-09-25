@@ -4,6 +4,7 @@ export type AdSpendRow = {
   date: string;
   campaignId: string;
   campaignName: string;
+  clipId?: string | null;
   currency: string;
   spend: number;
   impressions: number;
@@ -97,6 +98,12 @@ export const PROVIDERS: ProviderInfo[] = [
         key: "accessToken",
         label: "System User access token",
         hint: "Business Settings → System users → Generate token, cu permisiunea ads_read",
+      },
+      {
+        key: "project",
+        label: "Eticheta proiectului în numele campaniilor (opțional)",
+        type: "text",
+        hint: "Când contul de reclame e comun: doar campaniile al căror nume conține [eticheta], ex. [3dview]. Gol = toate campaniile contului.",
       },
     ],
   },

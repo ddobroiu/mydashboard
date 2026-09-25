@@ -30,6 +30,7 @@ async function replaceAdSpend(conn: Connection, since: string, until: string, ro
         date: dayDate(r.date),
         campaignId: r.campaignId,
         campaignName: r.campaignName,
+        clipId: r.clipId ?? null,
         currency: r.currency,
         spend: r.spend,
         impressions: r.impressions,

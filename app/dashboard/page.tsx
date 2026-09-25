@@ -96,7 +96,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
         </div>
       </div>
 
-      {social && <SocialSection s={social} />}
+      {social && <SocialSection s={social} currency={currency} />}
     </div>
   );
 }

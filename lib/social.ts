@@ -26,6 +26,10 @@ export type ClipStat = {
   // (aprecieri + comentarii + distribuiri) / vizualizari, in procente
   engagement: number | null;
   posts: { platform: string; account: string; url: string | null; views: number | null }[];
+  // Cheltuit pe reclame cu acest clip in perioada (moneda contului de reclame)
+  adSpend: number;
+  // Cost la 1000 de vizualizari (organice + din reclama), cand s-a cheltuit ceva
+  costPer1000: number | null;
   // A prins: peste dublul mediei clipurilor din perioada (vezi WINNER_*)
   winner: boolean;
 };
@@ -47,6 +51,8 @@ export type SocialMetrics = {
   clips: ClipStat[];
   // Media vizualizarilor pe clip (clipurile cu cifre), pragul pentru „Câștigător”
   clipMedianViews: number;
+  // Tot ce s-a cheltuit pe reclame cu clipuri in perioada
+  clipAdSpend: number;
 };
 
 // Un clip e „Câștigător” cand are cel putin de 2 ori media (mediana) clipurilor
@@ -95,6 +101,8 @@ export function aggregateClips(posts: PostForClip[]): { clips: ClipStat[]; media
       shares: 0,
       engagement: null,
       posts: [],
+      adSpend: 0,
+      costPer1000: null,
       winner: false,
       hasMetrics: false,
     };
@@ -166,9 +174,24 @@ export async function getSocialMetrics(projectIds: string[], since: string, unti
 
   const { clips, median: clipMedianViews } = aggregateClips(posts);
 
+  // Reclamele pe clipuri (campaniile cu „clip:<id>”), adunate pe clip
+  const spendRows = await prisma.adSpendDaily.groupBy({
+    by: ["clipId"],
+    where: { ...where, clipId: { not: null } },
+    _sum: { spend: true },
+  });
+  const spendByClip = new Map(spendRows.map((r) => [r.clipId!, Number(r._sum.spend ?? 0)]));
+  for (const c of clips) {
+    c.adSpend = spendByClip.get(c.key) ?? 0;
+    c.costPer1000 = c.adSpend > 0 && c.views > 0 ? (c.adSpend / c.views) * 1000 : null;
+  }
+  const clipAdSpend = [...spendByClip.values()].reduce((s, v) => s + v, 0);
+
   return {
-    clips: clips.slice(0, 20),
+    // Clipurile promovate raman in lista chiar daca nu sunt printre cele mai vazute
+    clips: clips.filter((c, i) => i < 20 || c.adSpend > 0),
     clipMedianViews,
+    clipAdSpend,
     published: posts.length,
     failed,
     upcoming,
