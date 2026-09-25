@@ -1,3 +1,4 @@
+import { raiseAlert, resolveAlert } from "@/lib/alerts";
 import type { Connection } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { decryptJson } from "@/lib/crypto";
@@ -189,6 +190,15 @@ export async function syncConnection(connectionId: string, days = 3) {
   }
 }
 
+// O conexiune care nu mai merge (cheie expirata, acces revocat) -> e-mail; cand merge iar -> „rezolvat”
+async function alertOnSync(connectionId: string, error: string | null) {
+  const c = await prisma.connection.findUnique({ where: { id: connectionId }, select: { provider: true, label: true, project: { select: { name: true } } } });
+  if (!c) return;
+  const key = `sync:${connectionId}`;
+  if (!error) return resolveAlert(key, `${c.project.name}: conexiunea ${c.provider} (${c.label ?? ""}) merge din nou.`);
+  await raiseAlert({ key, kind: "sync", project: c.project.name, message: `Conexiunea ${c.provider} (${c.label ?? ""}) nu se mai sincronizează: ${error.slice(0, 300)}` });
+}
+
 export async function syncAll(days = 3) {
   const conns = await prisma.connection.findMany({
     where: { status: { not: "DISABLED" }, provider: { in: [...SYNCABLE] } },
@@ -196,6 +206,10 @@ export async function syncAll(days = 3) {
   });
   const results = [];
   // Secvential, ca sa nu lovim rate-limit-urile platformelor.
-  for (const c of conns) results.push({ id: c.id, ...(await syncConnection(c.id, days)) });
+  for (const c of conns) {
+    const r = await syncConnection(c.id, days);
+    results.push({ id: c.id, ...r });
+    await alertOnSync(c.id, r.ok ? null : String(r.error ?? "eroare necunoscută")).catch(() => {});
+  }
   return results;
 }
