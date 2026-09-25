@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 
 // Alertele pe e-mail pentru proprietar: site picat, credite terminate la un furnizor, erori importante.
 // Acelasi tip de alerta pleaca cel mult o data pe ora; cand problema dispare trimitem „si-a revenit”.
-const TO = () => process.env.ALERT_EMAIL || "d_dobroiu@yahoo.com";
+const TO = () => process.env.ALERT_EMAIL || "contact@mydashboard.ro";
 const FROM = "mydashboard <alerte@mydashboard.ro>";
 const REPEAT_MS = 60 * 60 * 1000;
 
