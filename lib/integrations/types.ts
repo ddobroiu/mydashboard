@@ -149,7 +149,21 @@ export const PROVIDERS: ProviderInfo[] = [
       { key: "methods", label: "Metode de plată incluse (opțional)", type: "text", hint: "Implicit: Ramburs, OP" },
     ],
   },
-  { provider: "GOOGLE_ADS", name: "Google Ads", kind: "ads", available: false, fields: [] },
+  {
+    provider: "GOOGLE_ADS",
+    name: "Google Ads",
+    kind: "ads",
+    available: true,
+    // Fara cheie: primesti un script de pus in contul Google Ads, care trimite singur cheltuiala
+    fields: [
+      {
+        key: "project",
+        label: "Eticheta proiectului în numele campaniilor (opțional)",
+        type: "text",
+        hint: "Când contul de reclame e comun: doar campaniile al căror nume conține [eticheta], ex. [3dview]. Gol = toate campaniile contului. După ce conectezi primești un script de pus în Google Ads.",
+      },
+    ],
+  },
   { provider: "TIKTOK", name: "TikTok Ads", kind: "ads", available: false, fields: [] },
   {
     provider: "OBLIO",

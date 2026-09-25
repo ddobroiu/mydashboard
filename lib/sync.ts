@@ -18,7 +18,7 @@ const SOCIAL_MIN_DAYS = 30;
 
 // Rescrie complet intervalul [since, until] pentru o conexiune.
 // Asa prindem si corecturile tarzii (rambursari Stripe, cheltuieli Meta recalculate).
-async function replaceAdSpend(conn: Connection, since: string, until: string, rows: AdSpendRow[]) {
+export async function replaceAdSpend(conn: Connection, since: string, until: string, rows: AdSpendRow[]) {
   const range = { gte: dayDate(since), lte: dayDate(until) };
   await prisma.$transaction([
     prisma.adSpendDaily.deleteMany({ where: { connectionId: conn.id, date: range } }),

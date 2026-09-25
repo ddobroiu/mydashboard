@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { RefreshCw, Trash2 } from "lucide-react";
 import type { Connection } from "@prisma/client";
 import { PROVIDERS, providerName } from "@/lib/integrations/types";
@@ -42,7 +43,14 @@ export function ConnectionsPanel({ projectId, connections, canEdit }: { projectI
                   {c.status === "ERROR" ? (
                     <span className="text-bad">Eroare: {c.lastError}</span>
                   ) : (
-                    <>Ultima sincronizare: {fmtTime(c.lastSyncAt)}</>
+                    <>
+                      {c.provider === "GOOGLE_ADS" ? "Ultimele date primite" : "Ultima sincronizare"}: {fmtTime(c.lastSyncAt)}
+                    </>
+                  )}
+                  {c.provider === "GOOGLE_ADS" && canEdit && (
+                    <Link href={`/dashboard/projects/${projectId}/google-ads?c=${c.id}`} className="ml-2 text-accent">
+                      vezi scriptul
+                    </Link>
                   )}
                 </div>
               </div>
