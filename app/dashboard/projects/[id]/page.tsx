@@ -1,5 +1,7 @@
+import { Suspense } from "react";
 import { requireProject } from "@/lib/access";
 import { prisma } from "@/lib/prisma";
+import { AppStatsSection } from "@/components/AppStatsSection";
 import { getMetrics } from "@/lib/metrics";
 import { lastNDays } from "@/lib/dates";
 import { KpiTiles, CurrencyWarning } from "@/components/KpiTiles";
@@ -70,6 +72,10 @@ export default async function ProjectPage({
         <>
           <CurrencyWarning currencies={m.currencies} currency={project.currency} />
           <KpiTiles m={m} currency={project.currency} />
+          {/* Cifrele raportate de aplicatie (daca are /api/mydashboard/stats); nu tine pagina in loc */}
+          <Suspense fallback={null}>
+            <AppStatsSection projectName={project.name} domain={project.domain} currency={project.currency} />
+          </Suspense>
           <SpendRevenueChart data={m.daily} currency={project.currency} />
           {hasSites && <SitesSection rows={sites} currency={project.currency} />}
         </>

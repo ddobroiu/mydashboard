@@ -20,6 +20,48 @@ Organizație (noi / mai târziu fiecare client)
   obiective după adresa paginii, comenzi din dataLayer (GA4 `purchase`), plăți Stripe legate prin `client_reference_id` /
   `metadata.md_vid`, linkuri scurte urmărite, cheltuieli manuale. Raportul „De unde vin clienții” e pe pagina proiectului.
 - `/api/cron/sync`: apelat de `.github/workflows/sync.yml` de 4 ori pe zi
+- `lib/app-stats.ts` + `components/AppStatsSection.tsx`: cifrele din aplicații (conturi, comenzi, ce s-a vândut), vezi mai jos
+
+## Statistici din aplicații
+
+Pe pagina proiectului (Prezentare), sub încasările din Stripe, apare secțiunea „Din aplicație” dacă aplicația
+proiectului expune endpoint-ul de mai jos. Nu se configurează nimic în mydashboard și nu se salvează nimic în baza de date:
+la deschiderea paginii citim `https://<domeniul proiectului>/api/mydashboard/stats` (cache 5 minute în memorie;
+aplicațiile care răspund 404 sunt reîncercate la 30 de minute).
+
+**Autentificare** (ca la `/api/alert`): antetul `x-stats-token` = `HMAC-SHA256(CRON_SECRET, "stats:<proiect>")`, unde
+`<proiect>` e numele proiectului din mydashboard cu litere mici (`bazadate`, `postingclips`, `tiparementale`,
+`constelatii`, `invitonline`). Aplicația îl primește în `.env` ca `MYDASHBOARD_STATS_TOKEN` și îl compară în timp constant;
+fără variabilă răspunde 404 (endpoint dezactivat). Tokenul se calculează cu:
+
+```bash
+node -e "console.log(require('crypto').createHmac('sha256', process.env.CRON_SECRET).update('stats:bazadate').digest('hex'))"
+```
+
+**Răspunsul** (JSON, validat cu zod în `lib/app-stats.ts`; câmpurile în plus sunt ignorate):
+
+```jsonc
+{
+  "project": "bazadate",                 // același nume ca în token
+  "generatedAt": "2026-09-26T10:00:00Z",
+  "currency": "RON",                     // opțional; implicit moneda proiectului
+  "kpi": [                               // max 24 rânduri, în ordinea în care se afișează
+    { "key": "conturi", "label": "Conturi noi", "unit": "count",   // count | money | percent
+      "hint": "opțional, text mic sub etichetă",
+      "today": 1, "d7": 4, "d30": 14, "total": 290 }             // zile din România; null = „–”
+  ],
+  "recent": [                            // opțional, max 50 (se afișează 10)
+    { "at": "2026-09-26T09:12:00Z", "title": "100 firme", "detail": "client@exemplu.ro",
+      "amount": 75.5, "status": "paid" }                         // paid | pending | abandoned | failed | alt text
+  ]
+}
+```
+
+Sumele sunt în unități întregi ale monedei (lei, nu bani). Nu trimite încasări care vin deja din Stripe ca „venit” fără o
+etichetă clară; secțiunea e pentru ce vede aplicația (conturi, comenzi, produse vândute). Implementare de referință:
+`bazadate-main/app/api/mydashboard/stats/route.js` + `statsMydashboard()` din `bazadate-main/lib/admin.js`.
+
+Local: `APP_STATS_URLS="bazadate=http://localhost:3000"` citește aplicația de pe alt host decât domeniul proiectului.
 
 | Integrare | Stare |
 |---|---|
