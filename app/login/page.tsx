@@ -2,12 +2,13 @@
 
 import { useActionState } from "react";
 import { login } from "./actions";
+import { LegalFooter } from "@/components/LegalFooter";
 
 export default function LoginPage() {
   const [error, action, pending] = useActionState(login, null);
 
   return (
-    <main className="min-h-screen flex items-center justify-center px-4">
+    <main className="min-h-screen flex flex-col items-center justify-center px-4">
       <form action={action} className="card w-full max-w-sm p-6 space-y-4">
         <div>
           <h1 className="text-xl font-semibold">MyDashboard</h1>
@@ -26,6 +27,7 @@ export default function LoginPage() {
           {pending ? "Se verifică..." : "Intră"}
         </button>
       </form>
+      <LegalFooter />
     </main>
   );
 }

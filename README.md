@@ -19,6 +19,9 @@ Organizație (noi / mai târziu fiecare client)
 - `lib/tracking/*` + `/t.js` + `/api/t` + `/l/<cod>`: tracking propriu. Snippet-ul se ia din proiect → „Tracking”;
   obiective după adresa paginii, comenzi din dataLayer (GA4 `purchase`), plăți Stripe legate prin `client_reference_id` /
   `metadata.md_vid`, linkuri scurte urmărite, cheltuieli manuale. Raportul „De unde vin clienții” e pe pagina proiectului.
+  Consimțământ: cu `data-consent="required"` pe tag, t.js nu scrie și nu trimite nimic până la `mdTrack.consent(true)`
+  (sau `window.mdConsent = true` pus înainte de script); `mdTrack.consent(false)` oprește și șterge `_md_vid`/`_md_sid`/`_md_last`.
+  Datele de tracking mai vechi de 26 de luni se șterg la `/api/cron/sync` (vezi `/confidentialitate`).
 - `/api/cron/sync`: apelat de `.github/workflows/sync.yml` de 4 ori pe zi
 - `lib/app-stats.ts` + `components/AppStatsSection.tsx`: cifrele din aplicații (conturi, comenzi, ce s-a vândut), vezi mai jos
 

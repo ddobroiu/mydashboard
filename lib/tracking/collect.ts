@@ -1,6 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { dayDate, dayKey } from "@/lib/dates";
+import { addDays, dayDate, dayKey } from "@/lib/dates";
 import { attribute, deviceOf } from "./sources";
 
 export type Hit = {
@@ -144,4 +144,16 @@ export async function recordHit(h: Hit, userAgent: string) {
   await prisma.trackEvent.create({
     data: { ...base, type: h.t, name: h.name ?? h.t, value: h.value, currency: h.currency, orderId: h.order },
   });
+}
+
+// Pastrare: vizitele si evenimentele mai vechi de 26 de luni se sterg (vezi /confidentialitate).
+export const TRACKING_RETENTION_DAYS = 790;
+
+export async function purgeOldTracking() {
+  const cutoff = dayDate(addDays(dayKey(new Date()), -TRACKING_RETENTION_DAYS));
+  const [events, sessions] = await prisma.$transaction([
+    prisma.trackEvent.deleteMany({ where: { date: { lt: cutoff } } }),
+    prisma.trackSession.deleteMany({ where: { date: { lt: cutoff } } }),
+  ]);
+  return { events: events.count, sessions: sessions.count };
 }
