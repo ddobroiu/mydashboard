@@ -71,10 +71,22 @@ function hostOf(url: string) {
   }
 }
 
-function pathOf(url: string) {
+// In baza pastram din adresa doar calea si parametrii de campanie; restul parametrilor (email, token, id-uri de
+// comanda etc.) pot contine date personale si se arunca. Fragmentul (#...) nu ajunge oricum aici.
+const KEEP_PARAMS = new Set(["gclid", "fbclid", "ttclid", "gbraid", "wbraid", "msclkid", "ref"]);
+const keepParam = (k: string) => k.toLowerCase().startsWith("utm_") || KEEP_PARAMS.has(k.toLowerCase());
+
+// raw = true doar pentru potrivirea obiectivelor (in memorie, nu se salveaza)
+function pathOf(url: string, raw = false) {
   try {
     const u = new URL(url);
-    return (u.pathname + u.search).slice(0, 500);
+    if (raw) return (u.pathname + u.search).slice(0, 500);
+    const q = new URLSearchParams();
+    u.searchParams.forEach((v, k) => {
+      if (keepParam(k)) q.append(k, v);
+    });
+    const search = q.toString();
+    return (u.pathname + (search ? `?${search}` : "")).slice(0, 500);
   } catch {
     return "/";
   }
@@ -125,7 +137,8 @@ export async function recordHit(h: Hit, userAgent: string) {
   if (h.t === "pageview") {
     await prisma.trackEvent.create({ data: { ...base, type: "pageview" } });
     // Obiectivele se ating o singura data pe vizita
-    const lower = path.toLowerCase();
+    // obiectivele se potrivesc pe adresa completa (ex. "?comanda=ok"), ca inainte
+    const lower = pathOf(h.url, true).toLowerCase();
     for (const goal of info.goals) {
       if (!lower.includes(goal.pattern.toLowerCase())) continue;
       const done = await prisma.trackEvent.count({ where: { sessionId: h.sid, goalId: goal.id } });

@@ -115,7 +115,10 @@ export default async function TrackingPage({ params }: { params: Promise<{ id: s
         </div>
         <p className="text-xs text-text-3">
           Codul salvează un ID anonim al vizitatorului în browser, ca să lege vizita de comandă. Dacă site-ul are banner de cookie-uri,
-          trece-l la categoria „Statistici / Marketing”, la fel ca Meta Pixel.
+          trece-l la categoria „Statistici / Marketing”, la fel ca Meta Pixel. Varianta cu acord: adaugă{" "}
+          <code>data-consent=&quot;required&quot;</code> pe tag și apelează <code>mdTrack.consent(true)</code> la acceptare (
+          <code>mdTrack.consent(false)</code> la refuz / retragere); până atunci codul nu salvează și nu trimite nimic. Detalii în{" "}
+          <code>docs/tracker-privacy.md</code>.
         </p>
       </Step>
 

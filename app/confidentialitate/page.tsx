@@ -63,7 +63,10 @@ export default function PrivacyPage() {
           <li>
             <strong>Date trimise la fiecare pagină</strong>: adresa paginii (inclusiv parametrii de campanie precum utm_*, gclid,
             fbclid, ttclid), site-ul de proveniență (referrer), lățimea ecranului și tipul de dispozitiv dedus din browser (desktop /
-            mobil / tabletă). Pentru comenzi: valoarea, moneda și numărul comenzii, atunci când site-ul le transmite.
+            mobil / tabletă). Pentru comenzi: valoarea, moneda și numărul comenzii, atunci când site-ul le transmite. Din adresa
+            paginii salvăm doar calea și parametrii de campanie (utm_*, gclid, fbclid, ttclid, gbraid, wbraid, msclkid, ref);
+            ceilalți parametri (care ar putea conține, de exemplu, o adresă de email sau un cod) sunt eliminați înainte de
+            salvare. Din site-ul de proveniență păstrăm doar numele domeniului.
           </li>
           <li>
             <strong>Plăți</strong>: identificatorul vizitatorului este atașat plăților Stripe (câmpul{" "}

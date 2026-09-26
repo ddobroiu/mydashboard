@@ -11,8 +11,11 @@ import { PAYMENT_HOSTS } from "./sources";
 // Consimtamant (optional, pentru site-urile cu banner de cookies):
 //  - cu data-consent="required" pe tag, scriptul NU scrie nimic (cookie/localStorage) si NU trimite nimic
 //    pana la window.mdTrack.consent(true) sau pana cand window.mdConsent === true inainte de incarcare
-//  - window.mdTrack.consent(false) opreste trimiterea si sterge _md_vid / _md_sid / _md_last (merge in orice mod)
+//    (window.__mdConsent e acceptat ca alias)
+//  - window.mdTrack.consent(false) opreste trimiterea si sterge _md_vid / _md_sid / _md_last (merge in orice mod);
+//    un acord dat din nou dupa retragere porneste cu identificatori noi
 //  - fara atribut, comportamentul e cel de dinainte (porneste imediat)
+// Documentatie pentru politicile de cookies ale site-urilor: docs/tracker-privacy.md
 export function trackerScript(endpoint: string) {
   return `(function(){
 "use strict";
@@ -22,7 +25,7 @@ var ask=S.getAttribute("data-consent")==="required",on=false,started=false,vid,s
 function g(k){try{return localStorage.getItem(k)}catch(e){return null}}
 function p(k,v){if(!on)return;try{localStorage.setItem(k,v)}catch(e){}}
 function rid(){var a=new Uint8Array(16);(window.crypto||window.msCrypto).getRandomValues(a);return Array.prototype.map.call(a,function(b){return("0"+b.toString(16)).slice(-2)}).join("")}
-function host(u){try{return new URL(u).hostname.replace(/^www\./,"")}catch(e){return""}}
+function host(u){try{return new URL(u).hostname.replace(/^www\\./,"")}catch(e){return""}}
 function isPay(h){for(var i=0;i<PAY.length;i++)if(h===PAY[i]||h.slice(-PAY[i].length-1)==="."+PAY[i])return true;return false}
 function sec(){return location.protocol==="https:"?"; Secure":""}
 function keep(){p("_md_vid",vid);try{document.cookie="_md_vid="+vid+"; path=/; max-age=31536000; SameSite=Lax"+sec()}catch(e){}}
@@ -30,12 +33,12 @@ function wipe(){["_md_vid","_md_sid","_md_last"].forEach(function(k){try{localSt
 function send(d){if(!on)return;d.site=site;d.vid=vid;d.sid=sid;d.url=location.href;var b=JSON.stringify(d);p("_md_last",String(Date.now()));
 if(navigator.sendBeacon&&navigator.sendBeacon(API,b))return;try{fetch(API,{method:"POST",body:b,keepalive:true,mode:"no-cors"})}catch(e){}}
 var api=function(name,o){if(on&&track)track(name,o)};
-api.consent=function(ok){if(ok){on=true;if(started){keep();api.vid=vid}else start()}else{on=false;wipe();delete api.vid}};
+api.consent=function(ok){if(ok){on=true;if(started){if(!vid){vid=rid();sid=rid()}keep();p("_md_sid",sid);api.vid=vid}else start()}else{on=false;wipe();vid=sid=null;delete api.vid}};
 window.mdTrack=api;
 function start(){started=true;
 var ck=document.cookie.match(/(?:^|; )_md_vid=([a-f0-9]{32})/);vid=g("_md_vid")||(ck&&ck[1]);if(!vid)vid=rid();keep();
 sid=g("_md_sid");var last=+g("_md_last")||0,now=Date.now();
-var q=new URLSearchParams(location.search),rh=host(document.referrer),me=location.hostname.replace(/^www\./,"");
+var q=new URLSearchParams(location.search),rh=host(document.referrer),me=location.hostname.replace(/^www\\./,"");
 var fromCampaign=q.get("utm_source")||q.get("gclid")||q.get("fbclid")||q.get("ttclid")||q.get("gbraid")||q.get("wbraid");
 var fromOutside=rh&&rh!==me&&!isPay(rh);
 var fresh=!sid||now-last>IDLE||fromCampaign||fromOutside;
@@ -59,7 +62,8 @@ var lastUrl=location.href;function nav(){if(location.href===lastUrl)return;lastU
 var hp=history.pushState;history.pushState=function(){var r=hp.apply(this,arguments);setTimeout(nav,0);return r};
 window.addEventListener("popstate",nav);
 }
-if(window.mdConsent===false){wipe();return}
-if(!ask||window.mdConsent===true)api.consent(true);
+var pre=window.mdConsent!==undefined?window.mdConsent:window.__mdConsent;
+if(pre===false){wipe();return}
+if(!ask||pre===true)api.consent(true);
 })();`;
 }
