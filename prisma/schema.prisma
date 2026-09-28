@@ -30,6 +30,7 @@ model Organization {
   createdAt   DateTime     @default(now())
   memberships Membership[]
   projects    Project[]
+  fixedCosts  FixedCost[]
 }
 
 enum Role {
@@ -72,6 +73,10 @@ model Project {
   trackEvents    TrackEvent[]
   goals          Goal[]
   trackedLinks   TrackedLink[]
+  gscSite        GscSite?
+  gscDaily       GscDaily[]
+  gscTop         GscTop[]
+  fixedCosts     FixedCost[]
 
   @@index([organizationId])
 }
@@ -169,6 +174,8 @@ model Transaction {
   visitorId    String?
   // Site-ul pe care s-a facut plata, cand proiectul are mai multe site-uri (ex. grupul print)
   site         String?
+  // Comisionul Stripe, in moneda platii (din balance transaction); null = necunoscut (se estimeaza)
+  fee          Decimal?   @db.Decimal(14, 2)
   project      Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
   connection   Connection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
 
@@ -365,6 +372,70 @@ model SyncRun {
   connection   Connection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
 
   @@index([connectionId, startedAt])
+}
+
+// ─── Google Search Console ──────────────────────────────────────────────────
+// Robotul (service account) citeste proprietatea sc-domain:<domeniul proiectului>.
+// Starea sincronizarii pe proiect; fereastra curenta de 28 de zile pentru topuri.
+model GscSite {
+  projectId    String    @id
+  siteUrl      String
+  lastSyncAt   DateTime?
+  lastError    String?
+  // Ultima zi cu date in Google
+  lastDate     DateTime? @db.Date
+  periodStart  DateTime? @db.Date
+  periodEnd    DateTime? @db.Date
+  project      Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+// Totalurile pe zi din Google: clicuri, afisari, pozitia medie
+model GscDaily {
+  projectId   String
+  date        DateTime @db.Date
+  clicks      Int
+  impressions Int
+  position    Float
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@id([projectId, date])
+}
+
+// Topul cautarilor (kind = query) si al paginilor (kind = page) pe ultimele 28 de zile (period = cur)
+// si pe cele 28 dinainte (period = prev). Rescris la fiecare sincronizare.
+model GscTop {
+  id          String  @id @default(cuid())
+  projectId   String
+  kind        String
+  period      String
+  key         String
+  clicks      Int
+  impressions Int
+  position    Float
+  project     Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, kind, period])
+}
+
+// ─── Costuri fixe ───────────────────────────────────────────────────────────
+// Costuri lunare (servere, domenii, unelte de e-mail, SerpAPI...). projectId null = comun,
+// impartit in mod egal intre toate proiectele organizatiei.
+model FixedCost {
+  id             String       @id @default(cuid())
+  organizationId String
+  projectId      String?
+  name           String
+  monthly        Decimal      @db.Decimal(12, 2)
+  currency       String       @default("EUR")
+  // Valoare pusa de noi, de confirmat de proprietar
+  toVerify       Boolean      @default(false)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  project        Project?     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([projectId])
 }
 
 // ─── NextAuth ───────────────────────────────────────────────────────────────

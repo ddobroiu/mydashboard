@@ -115,6 +115,8 @@ export function attribute(pageUrl: string, referrer: string | null): Attribution
   if (clickType === "ttclid") return { ...base, source: "tiktok", medium: "cpc" };
 
   if (referrerHost) {
+    // Inainte de motoarele de cautare: gemini.google.com nu e „Google”
+    if (isAiSource(referrerHost)) return { ...base, source: referrerHost, medium: "referral" };
     const search = matchHost(referrerHost, SEARCH);
     if (search) return { ...base, source: search, medium: "organic" };
     const social = matchHost(referrerHost, SOCIAL);
@@ -165,3 +167,60 @@ export function deviceOf(ua: string): string {
 
 export const isBot = (ua: string) =>
   !ua || /bot|crawler|spider|crawling|headless|lighthouse|preview|facebookexternalhit|slurp|bingpreview|monitor|curl|wget|python|axios|node-fetch/i.test(ua);
+
+// Asistentii AI care trimit vizitatori (referrer sau utm_source=chatgpt.com, pus automat de ChatGPT)
+const AI_HOSTS = [
+  "chatgpt.com",
+  "openai.com",
+  "perplexity.ai",
+  "gemini.google.com",
+  "bard.google.com",
+  "copilot.microsoft.com",
+  "claude.ai",
+  "chat.deepseek.com",
+  "deepseek.com",
+  "grok.com",
+  "meta.ai",
+  "chat.mistral.ai",
+  "you.com",
+  "phind.com",
+  "poe.com",
+];
+const AI_NAMES = new Set(["chatgpt", "openai", "perplexity", "gemini", "copilot", "claude", "deepseek", "grok"]);
+
+export function isAiSource(source: string): boolean {
+  const s = source.toLowerCase().replace(/^www\./, "");
+  return AI_NAMES.has(s) || AI_HOSTS.some((h) => s === h || s.endsWith(`.${h}`));
+}
+
+// Canalele pe intelesul tuturor, pentru „Cine îți aduce bani”
+export type SimpleChannel =
+  | "Google (căutare)"
+  | "Google Ads"
+  | "Facebook / Instagram"
+  | "ChatGPT / AI"
+  | "Alte rețele sociale"
+  | "Alte reclame"
+  | "Email"
+  | "Alte site-uri"
+  | "Direct";
+
+// ch = canalul detaliat (channelOf), source = sursa vizitei
+export function simpleChannelOf(ch: Channel, source: string): SimpleChannel {
+  if (isAiSource(source)) return "ChatGPT / AI";
+  switch (ch) {
+    case "Google Ads":
+      return "Google Ads";
+    case "Meta Ads":
+      return "Facebook / Instagram";
+    case "TikTok Ads":
+    case "Alte reclame":
+      return "Alte reclame";
+    case "Căutare organică":
+      return source === "google" ? "Google (căutare)" : "Alte site-uri";
+    case "Social organic":
+      return META_SOURCES.has(source) ? "Facebook / Instagram" : "Alte rețele sociale";
+    default:
+      return ch;
+  }
+}

@@ -3,16 +3,19 @@ import Link from "next/link";
 export const PROJECT_TABS = [
   { key: "prezentare", label: "Prezentare" },
   { key: "trafic", label: "Trafic" },
+  { key: "google", label: "Google" },
+  { key: "bani", label: "Bani" },
   { key: "reclame", label: "Reclame" },
   { key: "social", label: "Social" },
   { key: "facturi", label: "Facturi" },
-  { key: "costuri", label: "Costuri" },
   { key: "conexiuni", label: "Conexiuni" },
 ] as const;
 
 export type ProjectTab = (typeof PROJECT_TABS)[number]["key"];
 
 export function parseTab(v: string | string[] | undefined): ProjectTab {
+  // tabul vechi „Costuri” e acum in „Bani”
+  if (v === "costuri") return "bani";
   return PROJECT_TABS.find((t) => t.key === v)?.key ?? "prezentare";
 }
 

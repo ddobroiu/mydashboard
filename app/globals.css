@@ -90,6 +90,8 @@ body {
   border-radius: 12px;
 }
 
+/* in layer-ul components, ca utilitarele (w-24, w-auto) sa poata schimba latimea */
+@layer components {
 .input {
   width: 100%;
   background: var(--surface);
@@ -102,6 +104,7 @@ body {
 .input:focus {
   outline: 2px solid var(--accent);
   outline-offset: -1px;
+}
 }
 
 .btn {

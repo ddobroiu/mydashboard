@@ -1,7 +1,7 @@
 import type { Provider } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { addDays, dayDate } from "@/lib/dates";
-import { channelOf, type Channel } from "./sources";
+import { channelOf, simpleChannelOf, type Channel, type SimpleChannel } from "./sources";
 
 // Cat inapoi cautam vizita care a adus clientul (ca la Google Analytics)
 const LOOKBACK_DAYS = 30;
@@ -22,6 +22,8 @@ export type SourceRow = {
 
 export type ChannelRow = Omit<SourceRow, "source" | "medium" | "campaign" | "visitors"> & { visitors: number };
 
+export type SimpleRow = { channel: SimpleChannel; sessions: number; visitors: number; orders: number; revenue: number };
+
 export type Traffic = {
   sessions: number;
   visitors: number;
@@ -33,6 +35,8 @@ export type Traffic = {
   unattributedOrders: number;
   unattributedRevenue: number;
   channels: ChannelRow[];
+  // Aceleasi date pe canalele simple (Google, Facebook / Instagram, ChatGPT / AI...), dupa bani
+  simple: SimpleRow[];
   sources: SourceRow[];
   landingPages: { path: string; sessions: number; orders: number; revenue: number }[];
   goalsByName: { name: string; count: number }[];
@@ -203,6 +207,18 @@ export async function getTraffic(projectIds: string[], since: string, until: str
     channelSpend.set(channel, (channelSpend.get(channel) ?? 0) + amount);
   }
 
+  const simple = new Map<SimpleChannel, SimpleRow & { vset: Set<string> }>();
+  for (const r of rows.values()) {
+    if (r.source === "(manual)") continue;
+    const ch = simpleChannelOf(r.channel, r.source);
+    const c = simple.get(ch) ?? { channel: ch, sessions: 0, visitors: 0, orders: 0, revenue: 0, vset: new Set<string>() };
+    c.sessions += r.sessions;
+    c.orders += r.orders;
+    c.revenue += r.revenue;
+    for (const v of r.vset) c.vset.add(v);
+    simple.set(ch, c);
+  }
+
   const sources: SourceRow[] = [...rows.values()].map(({ vset, ...r }) => ({ ...r, visitors: vset.size }));
 
   const channels = new Map<Channel, ChannelRow & { vset: Set<string> }>();
@@ -233,6 +249,10 @@ export async function getTraffic(projectIds: string[], since: string, until: str
     channels: [...channels.values()]
       .map(({ vset, ...c }) => ({ ...c, visitors: vset.size }))
       .sort((a, b) => b.revenue - a.revenue || b.spend - a.spend || b.sessions - a.sessions),
+    simple: [...simple.values()]
+      .map(({ vset, ...c }) => ({ ...c, visitors: vset.size }))
+      .filter((c) => c.sessions > 0 || c.orders > 0)
+      .sort((a, b) => b.revenue - a.revenue || b.orders - a.orders || b.visitors - a.visitors),
     sources: sources.sort((a, b) => b.revenue - a.revenue || b.sessions - a.sessions).slice(0, 50),
     landingPages: [...pages.values()].sort((a, b) => b.sessions - a.sessions).slice(0, 15),
     goalsByName: [...goalNames].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count),

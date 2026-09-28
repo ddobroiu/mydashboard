@@ -86,3 +86,9 @@ export async function getMetrics(projectIds: string[], since: string, until: str
 export function formatMoney(v: number, currency = "RON") {
   return new Intl.NumberFormat("ro-RO", { style: "currency", currency, maximumFractionDigits: 0 }).format(v);
 }
+
+// Ca formatMoney, dar sumele mici (sub 100) cu doua zecimale, ca sa nu apara „0 EUR” la costuri mici
+export function formatMoneyFine(v: number, currency = "RON") {
+  if (Math.abs(v) >= 100 || v === 0) return formatMoney(v, currency);
+  return new Intl.NumberFormat("ro-RO", { style: "currency", currency, minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v);
+}

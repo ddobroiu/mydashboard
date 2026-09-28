@@ -21,13 +21,18 @@ import { getAiCosts } from "@/lib/ai-costs";
 import { SitesSection } from "@/components/SitesSection";
 import { getSites } from "@/lib/sites";
 import { NotConnected, ProjectTabs, parseTab } from "@/components/ProjectTabs";
+import { GoogleSection, parseChartDays } from "@/components/GoogleSection";
+import { getGoogleReport } from "@/lib/gsc-report";
+import { MoneySection } from "@/components/MoneySection";
+import { getMoney, parseMoneyView } from "@/lib/money";
+import { SourcesMoney } from "@/components/SourcesMoney";
 
 export default async function ProjectPage({
   params,
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ days?: string; tab?: string }>;
+  searchParams: Promise<{ days?: string; tab?: string; g?: string; m?: string }>;
 }) {
   const { id } = await params;
   const sp = await searchParams;
@@ -37,13 +42,22 @@ export default async function ProjectPage({
   const { project, role } = await requireProject(id);
   const { since, until } = lastNDays(days);
 
-  const [m, social, traffic, invoices, ai, sites, connections] = await Promise.all([
-    getMetrics([project.id], since, until),
-    getSocialMetrics([project.id], since, until),
-    getTraffic([project.id], since, until),
-    getInvoices([project.id], since, until),
-    getAiCosts([project.id], since, until),
-    getSites([project.id], since, until),
+  const ids = [project.id];
+  const on = <T,>(when: boolean, f: () => Promise<T>) => (when ? f() : Promise.resolve(null));
+  const chartDays = parseChartDays(sp.g);
+  const moneyView = parseMoneyView(sp.m);
+
+  // Fiecare tab citeste doar ce afiseaza
+  const [m, social, traffic, invoices, ai, sites, google, money, orgSize, connections] = await Promise.all([
+    on(tab === "prezentare" || tab === "reclame" || tab === "bani", () => getMetrics(ids, since, until)),
+    on(tab === "social" || tab === "bani", () => getSocialMetrics(ids, since, until)),
+    on(tab === "prezentare" || tab === "trafic", () => getTraffic(ids, since, until)),
+    on(tab === "facturi", () => getInvoices(ids, since, until)),
+    on(tab === "bani", () => getAiCosts(ids, since, until)),
+    on(tab === "prezentare", () => getSites(ids, since, until)),
+    on(tab === "google", () => getGoogleReport(project.id, chartDays)),
+    on(tab === "bani", () => getMoney([project], moneyView)),
+    on(tab === "bani", () => prisma.project.count({ where: { organizationId: project.organizationId } })),
     prisma.connection.findMany({
       where: { projectId: project.id, provider: { not: "MANUAL" } },
       select: { id: true, provider: true, label: true, externalId: true, status: true, lastSyncAt: true, lastError: true },
@@ -55,7 +69,8 @@ export default async function ProjectPage({
   const hasInvoices = connections.some((c) => c.provider === "OBLIO");
   const hasAi = connections.some((c) => c.provider === "REPLICATE");
   // Doar la proiectele cu mai multe site-uri (ex. grupul print)
-  const hasSites = sites.filter((r) => r.site).length > 1;
+  const hasSites = (sites ?? []).filter((r) => r.site).length > 1;
+  const periodLabel = `ultimele ${days} de zile`;
 
   return (
     <div className="space-y-6">
@@ -64,26 +79,33 @@ export default async function ProjectPage({
           <h1 className="text-2xl font-semibold">{project.name}</h1>
           {project.domain && <p className="text-sm text-text-3">{project.domain}</p>}
         </div>
-        {tab !== "conexiuni" && <RangeTabs basePath={base} days={days} tab={tab} />}
+        {tab !== "conexiuni" && tab !== "google" && tab !== "bani" && <RangeTabs basePath={base} days={days} tab={tab} />}
       </div>
       <ProjectTabs basePath={base} tab={tab} days={days} />
 
-      {tab === "prezentare" && (
+      {tab === "prezentare" && m && traffic && (
         <>
           <CurrencyWarning currencies={m.currencies} currency={project.currency} />
           <KpiTiles m={m} currency={project.currency} />
+          {traffic.lastHitAt && <SourcesMoney t={traffic} currency={project.currency} periodLabel={periodLabel} />}
           {/* Cifrele raportate de aplicatie (daca are /api/mydashboard/stats); nu tine pagina in loc */}
           <Suspense fallback={null}>
             <AppStatsSection projectName={project.name} domain={project.domain} currency={project.currency} />
           </Suspense>
           <SpendRevenueChart data={m.daily} currency={project.currency} />
-          {hasSites && <SitesSection rows={sites} currency={project.currency} />}
+          {hasSites && sites && <SitesSection rows={sites} currency={project.currency} />}
         </>
       )}
-      {tab === "trafic" && <TrafficSection t={traffic} currency={project.currency} projectId={project.id} />}
-      {tab === "reclame" && <CampaignTable campaigns={m.campaigns} currency={project.currency} />}
+      {tab === "trafic" && traffic && (
+        <>
+          {traffic.lastHitAt && <SourcesMoney t={traffic} currency={project.currency} periodLabel={periodLabel} />}
+          <TrafficSection t={traffic} currency={project.currency} projectId={project.id} />
+        </>
+      )}
+      {tab === "google" && google && <GoogleSection g={google} basePath={base} />}
+      {tab === "reclame" && m && <CampaignTable campaigns={m.campaigns} currency={project.currency} />}
       {tab === "social" &&
-        (hasSocial ? (
+        (hasSocial && social ? (
           <SocialSection s={social} currency={project.currency} />
         ) : (
           <NotConnected
@@ -94,7 +116,7 @@ export default async function ProjectPage({
           />
         ))}
       {tab === "facturi" &&
-        (hasInvoices ? (
+        (hasInvoices && invoices ? (
           <InvoicesSection inv={invoices} projectId={project.id} canEdit={role !== "VIEWER"} />
         ) : (
           <NotConnected
@@ -104,8 +126,23 @@ export default async function ProjectPage({
             days={days}
           />
         ))}
-      {tab === "costuri" && (
+      {tab === "bani" && m && social && ai && money && (
         <>
+          <MoneySection
+            m={money.rows[0]}
+            cur={money.cur}
+            prev={money.prev}
+            view={moneyView}
+            basePath={base}
+            organizationId={project.organizationId}
+            canEdit={role !== "VIEWER"}
+            sharedWith={orgSize ?? 1}
+            hasAi={hasAi}
+          />
+          <div className="flex flex-wrap items-center justify-between gap-2 pt-4">
+            <h2 className="text-lg font-semibold">Detalii pe perioadă</h2>
+            <RangeTabs basePath={base} days={days} tab={tab} />
+          </div>
           <CostSummary
             adSpend={m.spend}
             byProvider={m.byProvider}

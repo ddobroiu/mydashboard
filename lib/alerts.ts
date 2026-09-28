@@ -7,11 +7,11 @@ const TO = () => process.env.ALERT_EMAIL || "contact@mydashboard.ro";
 const FROM = "mydashboard <alerte@mydashboard.ro>";
 const REPEAT_MS = 60 * 60 * 1000;
 
-export type AlertKind = "down" | "credits" | "error" | "sync";
+export type AlertKind = "down" | "credits" | "error" | "sync" | "traffic";
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c] ?? c);
 
-async function sendEmail(subject: string, html: string): Promise<boolean> {
+export async function sendEmail(subject: string, html: string): Promise<boolean> {
   const key = process.env.RESEND_API_KEY;
   if (!key) return false;
   const res = await fetch("https://api.resend.com/emails", {
@@ -27,6 +27,7 @@ const TITLES: Record<AlertKind, string> = {
   credits: "Credite terminate",
   error: "Eroare",
   sync: "Conexiune care nu mai merge",
+  traffic: "Scădere vizite din Google",
 };
 
 // Problema e activa: e-mail la prima aparitie si apoi cel mult o data pe ora

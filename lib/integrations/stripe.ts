@@ -36,10 +36,29 @@ async function sessionsByPaymentIntent(c: StripeCredentials, gte: number, lt: nu
   return map;
 }
 
+// Comisionul Stripe in moneda platii. Balance transaction e in moneda contului (poate fi alta):
+// suma din cont = suma platii x exchange_rate, deci comisionul in moneda platii = fee / exchange_rate.
+function feeOf(ch: Stripe.Charge): number | null {
+  const bt = ch.balance_transaction;
+  if (!bt || typeof bt === "string") return null;
+  const div = ZERO_DECIMAL.has(bt.currency) ? 1 : 100;
+  return Math.round((bt.fee / div / (bt.exchange_rate ?? 1)) * 100) / 100;
+}
+
 // "tablou.net" -> "tablou"
 const siteOfDomain = (d: string) => d.toLowerCase().replace(/^www\./, "").split(".")[0] || null;
 
 export async function fetchStripeTransactions(c: StripeCredentials, since: string, until: string): Promise<TransactionRow[]> {
+  try {
+    return await fetchCharges(c, since, until, true);
+  } catch (e) {
+    // Cheile restrictionate fara drept pe Balance merg mai departe, doar fara comision (se estimeaza)
+    if (e instanceof Stripe.errors.StripePermissionError) return fetchCharges(c, since, until, false);
+    throw e;
+  }
+}
+
+async function fetchCharges(c: StripeCredentials, since: string, until: string, withFees: boolean): Promise<TransactionRow[]> {
   const rows: TransactionRow[] = [];
   // Marja de o zi in fiecare parte pentru fusul orar; filtram exact pe zi mai jos.
   const gte = Math.floor(dayDate(addDays(since, -1)).getTime() / 1000);
@@ -50,7 +69,7 @@ export async function fetchStripeTransactions(c: StripeCredentials, since: strin
   for await (const ch of client(c).charges.list({
     created: { gte, lt },
     limit: 100,
-    expand: ["data.payment_intent"],
+    expand: withFees ? ["data.payment_intent", "data.balance_transaction"] : ["data.payment_intent"],
   })) {
     if (ch.status !== "succeeded" || !ch.paid) continue;
     const occurredAt = new Date(ch.created * 1000);
@@ -79,6 +98,7 @@ export async function fetchStripeTransactions(c: StripeCredentials, since: strin
       clickId: meta.gclid ?? meta.fbclid ?? meta.ttclid ?? null,
       visitorId: (meta.md_vid && VISITOR_ID.test(meta.md_vid) ? meta.md_vid : null) ?? session?.vid ?? null,
       site: meta.project ?? (meta.source ? siteOfDomain(meta.source) : null),
+      fee: feeOf(ch),
     });
   }
   return rows;

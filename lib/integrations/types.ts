@@ -25,6 +25,8 @@ export type TransactionRow = {
   clickId: string | null;
   visitorId: string | null;
   site?: string | null;
+  // Comisionul procesatorului (Stripe), in moneda platii; null = necunoscut
+  fee?: number | null;
 };
 
 export type SocialPostRow = {

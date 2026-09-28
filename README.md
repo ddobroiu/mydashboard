@@ -22,7 +22,37 @@ Organizație (noi / mai târziu fiecare client)
   Consimțământ: cu `data-consent="required"` pe tag, t.js nu scrie și nu trimite nimic până la `mdTrack.consent(true)`
   (sau `window.mdConsent = true` pus înainte de script); `mdTrack.consent(false)` oprește și șterge `_md_vid`/`_md_sid`/`_md_last`.
   Datele de tracking mai vechi de 26 de luni se șterg la `/api/cron/sync` (vezi `/confidentialitate`).
-- `/api/cron/sync`: apelat de `.github/workflows/sync.yml` de 4 ori pe zi
+- `/api/cron/sync`: apelat din crontab-ul serverului la 10 minute (`/usr/local/bin/mydashboard-sync.sh`) și de `.github/workflows/sync.yml`
+- `lib/gsc.ts` + `/api/cron/gsc`: Google Search Console (clicuri, afișări, locul mediu pe zi; topul căutărilor și al paginilor pe
+  28 de zile vs. cele 28 dinainte). Tabul „Google” din proiect. Alertă când clicurile scad cu peste 30% față de săptămâna trecută
+  (doar peste 50 de clicuri/săptămână) sau când citirea eșuează.
+- `lib/money.ts` + `/dashboard/bani` + tabul „Bani”: vânzări − costuri (comision Stripe, AI, reclame, costuri fixe) = profit,
+  luna asta vs. aceleași zile din luna trecută. Sumele în alte monede se schimbă la cursul BNR (`lib/fx.ts`).
+- `lib/daily-report.ts` + `/api/cron/report` + `/dashboard/raport`: raportul de dimineață pe e-mail (ieri vs. aceeași zi de
+  săptămâna trecută), cu buton „Trimite acum raportul de test”.
+
+## Joburi programate (crontab pe server, ora UTC)
+
+```cron
+*/10 * * * * /usr/local/bin/mydashboard-sync.sh >> /var/log/mydashboard-sync.log 2>&1
+# Google Search Console, o dată pe zi (06:00/07:00 în România), înainte de raport
+0 4 * * * CS=$(grep -E "^CRON_SECRET=" /opt/apps/mydashboard/.env | cut -d= -f2- | tr -d '"'); curl -s -o /dev/null -w "gsc %{http_code}
+" -X POST -H "Authorization: Bearer $CS" --max-time 290 https://mydashboard.ro/api/cron/gsc >> /var/log/mydashboard-sync.log 2>&1
+# Raportul de dimineață la 07:30 în România: rulează la 04:30 și 05:30 UTC, trimite doar cel care cade la ora 7 (vară/iarnă)
+30 4,5 * * * CS=$(grep -E "^CRON_SECRET=" /opt/apps/mydashboard/.env | cut -d= -f2- | tr -d '"'); curl -s -o /dev/null -w "raport %{http_code}
+" -X POST -H "Authorization: Bearer $CS" --max-time 110 https://mydashboard.ro/api/cron/report >> /var/log/mydashboard-sync.log 2>&1
+```
+
+Cheia Search Console pe server: `base64 -w0 gsc-key.json` → `GSC_SERVICE_ACCOUNT_JSON=...` în `.env` (și în secretul
+`ENV_CONTENTS`). Alternativ fișierul în `/opt/apps/mydashboard/secrets/gsc-key.json`, montat în container
+(`volumes: ["./secrets:/app/secrets:ro"]` în `docker-compose.yml` din `deploy.yml`) cu `GSC_SERVICE_ACCOUNT_FILE=/app/secrets/gsc-key.json`.
+
+## Schimbări de schemă pe baza comună
+
+Baza e comună (`toateproiectele`, schema `mydashboard`), deci **nu** rulăm `prisma db push` pe producție. Pașii:
+1. `prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --script` (doar citește) → fișier în `prisma/sql/`.
+2. Verifici că are doar adăugări (tabele noi, coloane care acceptă NULL).
+3. `DATABASE_URL=... node scripts/apply-sql.mjs prisma/sql/<fișier>.sql` (refuză DROP/RENAME/ALTER COLUMN/DELETE, rulează într-o tranzacție).
 - `lib/app-stats.ts` + `components/AppStatsSection.tsx`: cifrele din aplicații (conturi, comenzi, ce s-a vândut), vezi mai jos
 
 ## Statistici din aplicații

@@ -63,6 +63,7 @@ async function replaceTransactions(conn: Connection, since: string, until: strin
         clickId: r.clickId,
         visitorId: r.visitorId,
         site: r.site ?? null,
+        fee: r.fee ?? null,
       })),
       skipDuplicates: true,
     }),

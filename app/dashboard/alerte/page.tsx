@@ -8,6 +8,7 @@ const KIND: Record<string, string> = {
   credits: "Credite terminate",
   error: "Eroare",
   sync: "Conexiune",
+  traffic: "Scădere din Google",
 };
 
 const fmt = (d: Date | null) => (d ? d.toLocaleString("ro-RO", { timeZone: "Europe/Bucharest", dateStyle: "short", timeStyle: "short" }) : "—");
