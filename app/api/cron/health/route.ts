@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 
 // Site-urile de print nu sunt proiecte in mydashboard (sunt urmarite in shopprint), dar le verificam si pe ele
-const EXTRA = ["www.shopprint.ro", "www.tablou.net", "www.anexa1.ro", "www.homeprint.ro", "www.adbanner.ro", "www.euprint.ro", "www.prynt.ro"];
+const EXTRA = ["www.shopprint.ro", "www.tablou.net", "www.homeprint.ro", "www.adbanner.ro", "www.euprint.ro", "www.prynt.ro", "www.anuntul.info"];
 
 async function check(host: string): Promise<{ ok: boolean; detail: string }> {
   let detail = "nu se poate conecta";

@@ -1,11 +1,14 @@
 import Link from "next/link";
-import { LayoutGrid, LogOut, Plus } from "lucide-react";
+import { BellRing, LayoutGrid, LogOut, Plus } from "lucide-react";
 import { projectsForUser, requireUser } from "@/lib/access";
+import { prisma } from "@/lib/prisma";
 import { logout } from "./actions";
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const userId = await requireUser();
   const projects = await projectsForUser(userId);
+  // problemele active din toate site-urile (erori, credite, site picat), in meniu
+  const activeAlerts = await prisma.alertState.count({ where: { active: true } });
 
   return (
     <div className="min-h-screen md:flex">
@@ -16,6 +19,12 @@ export default async function DashboardLayout({ children }: { children: React.Re
         <nav className="flex md:flex-col gap-1 overflow-x-auto md:overflow-visible flex-1 text-sm">
           <Link href="/dashboard" className="flex items-center gap-2 rounded-md px-2 py-1.5 text-text-2 hover:bg-bg shrink-0">
             <LayoutGrid size={16} /> Toate proiectele
+          </Link>
+          <Link href="/dashboard/alerte" className="flex items-center gap-2 rounded-md px-2 py-1.5 text-text-2 hover:bg-bg shrink-0">
+            <BellRing size={16} /> Alerte
+            {activeAlerts > 0 && (
+              <span className="ml-auto rounded-full bg-red-600 px-2 py-0.5 text-xs font-semibold text-white">{activeAlerts}</span>
+            )}
           </Link>
           <div className="hidden md:block text-xs uppercase tracking-wide text-text-3 mt-4 mb-1 px-2">Proiecte</div>
           {projects.map((p) => (
