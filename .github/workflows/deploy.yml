@@ -34,8 +34,6 @@ jobs:
           tags: ghcr.io/${{ github.repository_owner }}/mydashboard:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          build-args: |
-             DATABASE_URL=${{ secrets.DATABASE_URL }}
 
   deploy:
     needs: build-and-push
@@ -52,6 +50,8 @@ jobs:
             cd /opt/apps/mydashboard
             echo ${{ secrets.GITHUB_TOKEN }} | docker login ghcr.io -u ${{ github.actor }} --password-stdin
             echo "${{ secrets.ENV_CONTENTS }}" > .env
+            # DATABASE_URL doar la rulare (imaginea nu il mai contine): daca ENV_CONTENTS nu il are, se ia din secretul DATABASE_URL
+            if ! grep -q '^DATABASE_URL=' .env && [ -n '${{ secrets.DATABASE_URL }}' ]; then echo 'DATABASE_URL=${{ secrets.DATABASE_URL }}' >> .env; fi
             
             cat <<EOF > docker-compose.yml
             version: '3.8'

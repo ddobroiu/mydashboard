@@ -19,15 +19,15 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
-# Pass DATABASE_URL at build time so Prisma and Next.js can connect
-ARG DATABASE_URL
-ENV DATABASE_URL=$DATABASE_URL
+# Fara baza la build: niciun URL real / parola nu intra in imagine. Build-ul nu se conecteaza la baza
+# (paginile care citesc din ea se randeaza la cerere); lib/prisma cere doar ca variabila sa existe.
+# URL-ul real vine la rulare din .env de pe server (docker-compose env_file).
 
 # Generate Prisma Client
-RUN npx prisma generate
+RUN DATABASE_URL=postgresql://build:build@127.0.0.1:1/build npx prisma generate
 
 # Build Next.js
-RUN NEXT_TELEMETRY_DISABLED=1 npm run build
+RUN DATABASE_URL=postgresql://build:build@127.0.0.1:1/build NEXT_TELEMETRY_DISABLED=1 npm run build
 
 # Production image, copy all the files and run next
 FROM base AS runner
