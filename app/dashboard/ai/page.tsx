@@ -7,7 +7,8 @@ import { AI_ADMIN, AI_ADMIN_PROVIDERS } from "@/lib/integrations/ai-admin";
 import { AiTrendChart, AI_COLORS } from "@/components/AiTrendChart";
 import { AiKeyForm } from "@/components/AiKeyForm";
 import { Tile } from "@/components/KpiTiles";
-import { deleteAiAccount, linkAiExternal, syncAiNow, unlinkAiExternal } from "./actions";
+import { ERROR_KIND_NAMES, REPORTED_PROVIDER_NAMES, getReportedOverview, type AiErrorKind, type ReportedProvider } from "@/lib/ai-usage";
+import { deleteAiAccount, linkAiExternal, saveAiBudget, syncAiNow, unlinkAiExternal } from "./actions";
 
 export const dynamic = "force-dynamic";
 
@@ -16,7 +17,7 @@ const usd = (v: number, digits = 2) =>
 const tokens = (v: number) => (v > 0 ? new Intl.NumberFormat("ro-RO", { notation: "compact", maximumFractionDigits: 1 }).format(v) : "–");
 const fmtTime = (d: Date | null) =>
   d ? d.toLocaleString("ro-RO", { timeZone: "Europe/Bucharest", dateStyle: "short", timeStyle: "short" }) : "niciodată";
-const PROVIDERS: AiProviderKey[] = ["ANTHROPIC", "OPENAI", "REPLICATE"];
+const BASE_PROVIDERS: AiProviderKey[] = ["ANTHROPIC", "OPENAI", "REPLICATE"];
 
 function change(cur: number, prev: number) {
   if (prev <= 0) return undefined;
@@ -35,6 +36,12 @@ export default async function AiCostsPage() {
   const adminOrgs = orgs.filter((o) => o.memberships[0]?.role !== "VIEWER");
   const o = await getAiOverview(orgs.map((x) => x.id));
   const t = o.totals;
+  const me = await prisma.user.findUnique({ where: { id: userId }, select: { isSuperAdmin: true } });
+  // Aplicatiile care raporteaza sub un nume nepotrivit cu niciun proiect le vede doar super-adminul
+  const rep = await getReportedOverview(o.projects, Boolean(me?.isSuperAdmin));
+  const PROVIDERS: AiProviderKey[] = t.last30.OTHER || t.month.OTHER ? [...BASE_PROVIDERS, "OTHER"] : BASE_PROVIDERS;
+  const adminProjectIds = new Set(o.projects.filter((p) => adminOrgs.some((x) => x.id === p.organizationId)).map((p) => p.id));
+  const canEditBudget = (projectId: string | null) => (projectId ? adminProjectIds.has(projectId) : Boolean(me?.isSuperAdmin));
   const canEdit = adminOrgs.length > 0;
   const projectsOf = (orgId: string) => o.projects.filter((p) => p.organizationId === orgId);
 
@@ -45,7 +52,7 @@ export default async function AiCostsPage() {
           <h1 className="text-2xl font-semibold">Costuri AI</h1>
           <p className="text-sm text-text-3">
             Cât plătești pe Anthropic, OpenAI și Replicate, pe proiect. Sume în dolari, fără TVA. Anthropic și OpenAI se citesc o dată pe zi (ziua de
-            ieri, după ora lor UTC).
+            ieri, după ora lor UTC); consumul raportat de site-uri apare pe loc.
           </p>
         </div>
         {canEdit && o.accounts.length > 0 && (
@@ -62,11 +69,11 @@ export default async function AiCostsPage() {
         )}
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+      <div className={`grid grid-cols-2 gap-3 ${PROVIDERS.length > 3 ? "lg:grid-cols-6" : "lg:grid-cols-5"}`}>
         <Tile label="Luna asta" value={usd(t.month.total)} sub={`de la 1 până azi`} />
         <Tile label="Ultimele 30 de zile" value={usd(t.last30.total)} sub={change(t.last30.total, t.prev30.total)} />
         {PROVIDERS.map((p) => (
-          <Tile key={p} label={AI_PROVIDER_NAMES[p]} value={usd(t.last30[p])} sub={`30 de zile · luna asta ${usd(t.month[p])}${p === "REPLICATE" ? " · estimat" : ""}`} />
+          <Tile key={p} label={AI_PROVIDER_NAMES[p]} value={usd(t.last30[p])} sub={`30 de zile · luna asta ${usd(t.month[p])}${p === "REPLICATE" || p === "OTHER" ? " · estimat" : ""}`} />
         ))}
       </div>
 
@@ -141,6 +148,136 @@ export default async function AiCostsPage() {
           </table>
           {t.last30.total === 0 && t.month.total === 0 && <p className="text-sm text-text-3 pt-2">Niciun cost AI în ultimele 30 de zile.</p>}
         </div>
+      </section>
+
+      <section className="space-y-2">
+        <h2 className="text-lg font-semibold">Consum raportat de site-uri</h2>
+        <p className="text-xs text-text-3">
+          Fiecare aplicație trimite aici, pe loc, fiecare apel AI (tokeni, cost estimat din prețurile modelelor, erori). Sumele sunt estimate, dar se
+          văd imediat, pe când factura Anthropic / OpenAI vine a doua zi. Pe baza lor pleacă alertele pe e-mail: buget zilnic sau lunar depășit (și un
+          avertisment la 80% din bugetul lunar), credit terminat sau cheie API invalidă. Bugetul implicit e 2 $/zi și 20 $/lună pe site.
+        </p>
+        <div className="card p-4 overflow-x-auto">
+          {rep.sites.length === 0 ? (
+            <p className="text-sm text-text-3">Niciun site nu a raportat încă consum AI în ultimele 30 de zile.</p>
+          ) : (
+            <table className="w-full min-w-[960px] text-sm tabular">
+              <thead className="text-text-3 text-left">
+                <tr>
+                  <th className="py-2 font-normal">Site</th>
+                  <th className="py-2 pl-4 font-normal text-right">Azi</th>
+                  <th className="py-2 pl-4 font-normal text-right">Luna asta</th>
+                  <th className="py-2 pl-4 font-normal text-right">30 de zile</th>
+                  <th className="py-2 pl-4 font-normal">Furnizori (ce intră în totaluri)</th>
+                  <th className="py-2 pl-4 font-normal">Ultima eroare</th>
+                  <th className="py-2 pl-4 font-normal">Buget $/zi · $/lună</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rep.sites.map((s) => {
+                  const dayPct = s.budget.dailyUsd > 0 ? s.today / s.budget.dailyUsd : 0;
+                  const monPct = s.budget.monthlyUsd > 0 ? s.month / s.budget.monthlyUsd : 0;
+                  const tone = (pct: number) => (pct >= 1 ? "text-bad font-medium" : pct >= 0.8 ? "text-warn font-medium" : "");
+                  return (
+                    <tr key={s.project} className="border-t border-border align-top">
+                      <td className="py-2">
+                        {s.projectId ? (
+                          <Link href={`/dashboard/projects/${s.projectId}?tab=bani`} className="hover:text-accent">
+                            {s.projectName}
+                          </Link>
+                        ) : (
+                          <span>{s.project}</span>
+                        )}
+                        {s.projectName && s.projectName !== s.project && <span className="ml-1 text-xs text-text-3">({s.project})</span>}
+                        {!s.projectId && <div className="text-xs text-warn">nelegat de niciun proiect: numele nu se potrivește cu un proiect</div>}
+                        <div className="text-xs text-text-3">
+                          {s.calls30} apeluri
+                          {s.errors30 > 0 && `, ${s.errors30} erori`}
+                          {s.unpriced30 > 0 && `, ${s.unpriced30} fără preț`}
+                          {s.features.length > 0 && ` · ${s.features.map(([f]) => f).join(", ")}`}
+                        </div>
+                      </td>
+                      <td className={`py-2 pl-4 text-right ${tone(dayPct)}`}>
+                        {usd(s.today)}
+                        <div className="text-xs text-text-3 font-normal">{s.budget.dailyUsd > 0 ? `din ${usd(s.budget.dailyUsd)}` : "fără buget"}</div>
+                      </td>
+                      <td className={`py-2 pl-4 text-right ${tone(monPct)}`}>
+                        {usd(s.month)}
+                        <div className="text-xs text-text-3 font-normal">
+                          {s.budget.monthlyUsd > 0 ? `${Math.round(monPct * 100)}% din ${usd(s.budget.monthlyUsd)}` : "fără buget"}
+                        </div>
+                      </td>
+                      <td className="py-2 pl-4 text-right">{usd(s.last30)}</td>
+                      <td className="py-2 pl-4 text-xs">
+                        {s.providers.map(([prov, v]) => (
+                          <div key={prov}>
+                            {REPORTED_PROVIDER_NAMES[prov as ReportedProvider] ?? prov}: {usd(v.last30)}{" "}
+                            <span className={v.source === "facturat" ? "text-text-3" : "text-good"}>
+                              {v.source === "facturat" ? "(în totaluri: factura)" : "(în totaluri: raportat)"}
+                            </span>
+                          </div>
+                        ))}
+                      </td>
+                      <td className="py-2 pl-4 text-xs max-w-[260px]">
+                        {s.lastError ? (
+                          <>
+                            <span className={s.lastError.kind === "credit" || s.lastError.kind === "auth" ? "text-bad font-medium" : ""}>
+                              {ERROR_KIND_NAMES[s.lastError.kind as AiErrorKind] ?? s.lastError.kind}
+                            </span>{" "}
+                            · {REPORTED_PROVIDER_NAMES[s.lastError.provider as ReportedProvider] ?? s.lastError.provider} · {fmtTime(s.lastError.at)}
+                            <div className="text-text-3 truncate" title={s.lastError.message}>
+                              {s.lastError.message}
+                            </div>
+                          </>
+                        ) : (
+                          <span className="text-text-3">–</span>
+                        )}
+                      </td>
+                      <td className="py-2 pl-4">
+                        {canEditBudget(s.projectId) ? (
+                          <form action={saveAiBudget} className="flex items-center gap-1">
+                            <input type="hidden" name="project" value={s.project} />
+                            <input
+                              name="dailyUsd"
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              defaultValue={s.budget.dailyUsd}
+                              className="input w-20 py-1"
+                              aria-label={`Buget zilnic ${s.project}, în dolari`}
+                            />
+                            <input
+                              name="monthlyUsd"
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              defaultValue={s.budget.monthlyUsd}
+                              className="input w-20 py-1"
+                              aria-label={`Buget lunar ${s.project}, în dolari`}
+                            />
+                            <button className="btn btn-ghost py-1">Salvează</button>
+                          </form>
+                        ) : (
+                          <span className="text-xs">
+                            {usd(s.budget.dailyUsd)} · {usd(s.budget.monthlyUsd)}
+                          </span>
+                        )}
+                        <div className="text-xs text-text-3">{s.budget.custom ? "setat de tine" : "implicit"}</div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+        </div>
+        <p className="text-xs text-text-3">
+          <b>Ce sursă intră în totaluri</b> (sus, „Pe proiect” și la „Bani”): pentru fiecare proiect și furnizor folosim costul facturat când îl avem
+          (Anthropic / OpenAI printr-un workspace sau proiect legat la „Conturi”, Replicate prin conexiunea proiectului). Atunci consumul raportat de
+          site doar se afișează aici, ca să nu se adune de două ori. Când nu avem factura pentru acel furnizor, în totaluri intră consumul raportat de
+          site (estimat). Bugetele și alertele folosesc mereu consumul raportat, pentru că se vede pe loc. Pune 0 la un buget ca să oprești alerta
+          lui; golește ambele câmpuri ca să revii la bugetul implicit.
+        </p>
       </section>
 
       {o.unassigned.length > 0 && (

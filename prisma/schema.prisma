@@ -593,3 +593,57 @@ model AlertState {
   updatedAt  DateTime  @updatedAt
   createdAt  DateTime  @default(now())
 }
+
+// ─── Consumul AI raportat de aplicatii (POST /api/ingest/ai-usage) ───────────
+// Aplicatiile trimit fiecare apel AI (tokeni, cost estimat, eroare) cu acelasi token ca la /api/alert.
+// project = numele trimis de aplicatie (ca la /api/alert, ex. „PostingClips”); se potriveste cu un proiect dupa nume / domeniu.
+// Un rand pe zi (Europe/Bucharest), proiect, furnizor, model si functie. costUsd = recalculat aici cand stim modelul,
+// altfel costul trimis de aplicatie; calls fara pret cunoscut se numara in unpriced.
+model AiReportedDaily {
+  id            String   @id @default(cuid())
+  project       String
+  date          DateTime @db.Date
+  // openai | anthropic | replicate | google | other
+  provider      String
+  model         String
+  feature       String
+  calls         Int      @default(0)
+  errors        Int      @default(0)
+  unpriced      Int      @default(0)
+  inputTokens   BigInt   @default(0)
+  outputTokens  BigInt   @default(0)
+  cachedTokens  BigInt   @default(0)
+  seconds       Float    @default(0)
+  costUsd       Decimal  @default(0) @db.Decimal(14, 6)
+  // Costul calculat de aplicatie, pentru comparatie
+  clientCostUsd Decimal  @default(0) @db.Decimal(14, 6)
+  updatedAt     DateTime @updatedAt
+
+  @@unique([project, date, provider, model, feature])
+  @@index([date])
+}
+
+// Ultimele erori AI raportate (credit, auth, rate, other); pastram doar ultimele 30 de zile
+model AiReportedError {
+  id        String   @id @default(cuid())
+  project   String
+  provider  String
+  model     String
+  feature   String
+  // credit | auth | rate | other
+  kind      String
+  message   String
+  at        DateTime
+  createdAt DateTime @default(now())
+
+  @@index([project, at])
+  @@index([kind, at])
+}
+
+// Bugetul AI al unei aplicatii (cheia = numele raportat, ex. „PostingClips”). Fara rand: 2 $/zi si 20 $/luna.
+model AiBudget {
+  project    String   @id
+  dailyUsd   Decimal  @db.Decimal(10, 2)
+  monthlyUsd Decimal  @db.Decimal(10, 2)
+  updatedAt  DateTime @updatedAt
+}

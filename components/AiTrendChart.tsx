@@ -4,8 +4,9 @@ export const AI_COLORS: Record<AiProviderKey, string> = {
   ANTHROPIC: "var(--series-spend)",
   OPENAI: "var(--good)",
   REPLICATE: "var(--accent)",
+  OTHER: "var(--warn)",
 };
-const ORDER: AiProviderKey[] = ["REPLICATE", "OPENAI", "ANTHROPIC"];
+const ORDER: AiProviderKey[] = ["OTHER", "REPLICATE", "OPENAI", "ANTHROPIC"];
 
 const W = 900;
 const H = 200;
@@ -23,7 +24,7 @@ const fmtDay = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString("ro-
 
 // Costul AI pe zi, ultimele 30 de zile, cu bare stivuite pe furnizor. Desenat pe server (fara JS); detaliile la hover din <title>.
 export function AiTrendChart({ data }: { data: ({ date: string } & ByProvider)[] }) {
-  const totals = data.map((d) => d.ANTHROPIC + d.OPENAI + d.REPLICATE);
+  const totals = data.map((d) => d.ANTHROPIC + d.OPENAI + d.REPLICATE + d.OTHER);
   const max = niceMax(Math.max(0, ...totals));
   const innerW = W - PAD.left - PAD.right;
   const innerH = H - PAD.top - PAD.bottom;

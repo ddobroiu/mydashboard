@@ -1,12 +1,14 @@
 import { prisma } from "@/lib/prisma";
 import { addDays, dayDate, dayKey } from "@/lib/dates";
+import { reportedLinesFor } from "@/lib/ai-usage";
 
-// Costul AI din conturile de organizatie (Anthropic, OpenAI) si, pe pagina „Costuri AI”, si Replicate.
+// Costul AI din conturile de organizatie (Anthropic, OpenAI) si, pe pagina „Costuri AI”, si Replicate
+// plus consumul raportat de aplicatii (lib/ai-usage.ts) acolo unde nu avem costul facturat pentru acel furnizor.
 // Costul API se atribuie proiectului la citire, prin legaturile AiProjectLink (workspace / proiect extern -> proiect),
 // asa ca o legatura adaugata tarziu se aplica si zilelor deja aduse.
 
-export type AiProviderKey = "ANTHROPIC" | "OPENAI" | "REPLICATE";
-export const AI_PROVIDER_NAMES: Record<AiProviderKey, string> = { ANTHROPIC: "Anthropic", OPENAI: "OpenAI", REPLICATE: "Replicate" };
+export type AiProviderKey = "ANTHROPIC" | "OPENAI" | "REPLICATE" | "OTHER";
+export const AI_PROVIDER_NAMES: Record<AiProviderKey, string> = { ANTHROPIC: "Anthropic", OPENAI: "OpenAI", REPLICATE: "Replicate", OTHER: "Alții" };
 const providerKey = (p: string): AiProviderKey => (p === "ANTHROPIC_ADMIN" ? "ANTHROPIC" : p === "OPENAI_ADMIN" ? "OPENAI" : "REPLICATE");
 
 async function linksFor(projectIds: string[]) {
@@ -90,8 +92,8 @@ type Line = {
   outputTokens: number;
 };
 export type ByProvider = Record<AiProviderKey, number>;
-const zero = (): ByProvider => ({ ANTHROPIC: 0, OPENAI: 0, REPLICATE: 0 });
-const sum = (r: ByProvider) => r.ANTHROPIC + r.OPENAI + r.REPLICATE;
+const zero = (): ByProvider => ({ ANTHROPIC: 0, OPENAI: 0, REPLICATE: 0, OTHER: 0 });
+const sum = (r: ByProvider) => r.ANTHROPIC + r.OPENAI + r.REPLICATE + r.OTHER;
 
 export async function getAiOverview(organizationIds: string[]) {
   const today = dayKey(new Date());
@@ -105,7 +107,7 @@ export async function getAiOverview(organizationIds: string[]) {
   const [projects, accounts, api, replicate] = await Promise.all([
     prisma.project.findMany({
       where: { organizationId: { in: organizationIds } },
-      select: { id: true, name: true, organizationId: true },
+      select: { id: true, name: true, domain: true, organizationId: true },
       orderBy: { name: "asc" },
     }),
     prisma.aiAccount.findMany({
@@ -133,6 +135,9 @@ export async function getAiOverview(organizationIds: string[]) {
     }),
   ]);
 
+  // Consumul raportat de aplicatii, doar unde nu avem costul facturat (cont Admin legat / conexiune Replicate)
+  const reported = await reportedLinesFor(projects, from, today);
+
   const owner = new Map(accounts.flatMap((a) => a.links.map((l) => [`${a.id}|${l.externalId}`, l.projectId] as const)));
   const lines: Line[] = [
     ...api.map((r) => ({
@@ -155,6 +160,7 @@ export async function getAiOverview(organizationIds: string[]) {
       inputTokens: 0,
       outputTokens: 0,
     })),
+    ...reported,
   ];
 
   const nameOf = (accountId: string, externalId: string) => {

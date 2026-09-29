@@ -11,13 +11,13 @@ export type AlertKind = "down" | "credits" | "error" | "sync" | "traffic";
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c] ?? c);
 
-export async function sendEmail(subject: string, html: string): Promise<boolean> {
+export async function sendEmail(subject: string, html: string, to: string = TO()): Promise<boolean> {
   const key = process.env.RESEND_API_KEY;
   if (!key) return false;
   const res = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ from: FROM, to: TO(), subject, html }),
+    body: JSON.stringify({ from: FROM, to, subject, html }),
   }).catch(() => null);
   return Boolean(res?.ok);
 }

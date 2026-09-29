@@ -9,6 +9,10 @@ const KIND: Record<string, string> = {
   error: "Eroare",
   sync: "Conexiune",
   traffic: "Scădere din Google",
+  "ai-credit": "AI: credit terminat",
+  "ai-auth": "AI: cheie invalidă",
+  "ai-rate": "AI: limită de cereri",
+  "ai-budget": "AI: buget",
 };
 
 const fmt = (d: Date | null) => (d ? d.toLocaleString("ro-RO", { timeZone: "Europe/Bucharest", dateStyle: "short", timeStyle: "short" }) : "—");

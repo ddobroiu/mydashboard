@@ -6,6 +6,7 @@ import { encryptJson } from "@/lib/crypto";
 import { adminOrganizations, requireProject, requireUser } from "@/lib/access";
 import { AI_ADMIN, isAiAdminProvider } from "@/lib/integrations/ai-admin";
 import { AI_FIRST_DAYS, syncAiAccount } from "@/lib/ai-accounts";
+import { AI_DEFAULT_BUDGET, matchProject } from "@/lib/ai-usage";
 
 // Conturile Anthropic / OpenAI (o cheie Admin pe organizatie) si legarea workspace-urilor / proiectelor lor de proiecte.
 
@@ -85,5 +86,33 @@ export async function unlinkAiExternal(formData: FormData) {
   if (!link) return;
   await requireProject(link.projectId, "ADMIN");
   await prisma.aiProjectLink.delete({ where: { id: link.id } });
+  refresh();
+}
+
+// Bugetul AI al unui site (numele raportat de aplicatie). Ambele campuri goale = inapoi la bugetul implicit (2 $/zi, 20 $/luna).
+export async function saveAiBudget(formData: FormData) {
+  const userId = await requireUser();
+  const project = String(formData.get("project") ?? "").slice(0, 60);
+  if (!project) return;
+  const [orgs, me] = await Promise.all([adminOrganizations(userId), prisma.user.findUnique({ where: { id: userId }, select: { isSuperAdmin: true } })]);
+  const projects = await prisma.project.findMany({ where: { organizationId: { in: orgs.map((o) => o.id) } }, select: { id: true, name: true, domain: true } });
+  const all = await prisma.project.findMany({ select: { id: true, name: true, domain: true } });
+  // Site legat de un proiect: trebuie sa-l administrezi; nelegat: doar super-adminul
+  const owner = matchProject(project, all);
+  if (owner ? !projects.some((p) => p.id === owner.id) : !me?.isSuperAdmin) return;
+
+  const rawDay = String(formData.get("dailyUsd") ?? "").trim().replace(",", ".");
+  const rawMonth = String(formData.get("monthlyUsd") ?? "").trim().replace(",", ".");
+  if (!rawDay && !rawMonth) {
+    await prisma.aiBudget.deleteMany({ where: { project } });
+  } else {
+    const clamp = (v: string, fallback: number) => {
+      const n = v ? Number(v) : fallback;
+      return Number.isFinite(n) ? Math.min(Math.max(n, 0), 100_000) : fallback;
+    };
+    const dailyUsd = clamp(rawDay, AI_DEFAULT_BUDGET.dailyUsd);
+    const monthlyUsd = clamp(rawMonth, AI_DEFAULT_BUDGET.monthlyUsd);
+    await prisma.aiBudget.upsert({ where: { project }, create: { project, dailyUsd, monthlyUsd }, update: { dailyUsd, monthlyUsd } });
+  }
   refresh();
 }

@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { addDays, dayDate, dayKey } from "@/lib/dates";
 import { convert, getRates, type Rates } from "@/lib/fx";
 import { apiAiUsdByProject } from "@/lib/ai-api-costs";
+import { reportedUsdByProject } from "@/lib/ai-usage";
 
 // Banii pe proiect: vanzari (Stripe si celelalte incasari, minus rambursari) minus costuri
 // (comision Stripe, AI, reclame, costuri fixe). Totul se calculeaza in lei si se arata in moneda proiectului.
@@ -89,7 +90,7 @@ type P = { id: string; name: string; currency: string; organizationId: string };
 async function linesFor(projects: P[], period: Period, rates: Rates, fixedMonthlyRon: Map<string, number>) {
   const ids = projects.map((p) => p.id);
   const where = { projectId: { in: ids }, date: { gte: dayDate(period.since), lte: dayDate(period.until) } };
-  const [tx, noFee, ai, ads, apiAi] = await Promise.all([
+  const [tx, noFee, ai, ads, apiAi, reportedAi] = await Promise.all([
     prisma.transaction.groupBy({ by: ["projectId", "currency"], where, _sum: { amount: true, fee: true } }),
     prisma.transaction.groupBy({
       by: ["projectId", "currency"],
@@ -101,6 +102,8 @@ async function linesFor(projects: P[], period: Period, rates: Rates, fixedMonthl
     prisma.adSpendDaily.groupBy({ by: ["projectId", "currency"], where, _sum: { spend: true } }),
     // Anthropic / OpenAI, prin workspace-urile / proiectele legate de fiecare proiect
     apiAiUsdByProject(ids, period.since, period.until),
+    // Consumul raportat de aplicatii, doar pentru furnizorii fara cost facturat la acel proiect (fara dublare)
+    reportedUsdByProject(ids, period.since, period.until),
   ]);
   const orders = await prisma.transaction.groupBy({ by: ["projectId"], where: { ...where, amount: { gt: 0 } }, _count: { _all: true } });
 
@@ -119,6 +122,7 @@ async function linesFor(projects: P[], period: Period, rates: Rates, fixedMonthl
   for (const r of orders) lines.get(r.projectId)!.orders = r._count._all;
   for (const r of ai) lines.get(r.projectId)!.ai += ron(r._sum.costUsd, "USD");
   for (const [pid, usd] of apiAi) lines.get(pid)!.ai += ron(usd, "USD");
+  for (const [pid, usd] of reportedAi) lines.get(pid)!.ai += ron(usd, "USD");
   for (const r of ads) lines.get(r.projectId)!.ads += ron(r._sum.spend, r.currency);
   for (const [id, l] of lines) {
     l.fixed = (fixedMonthlyRon.get(id) ?? 0) * period.fixedShare;
