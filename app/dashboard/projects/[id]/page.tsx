@@ -18,6 +18,9 @@ import { getInvoices } from "@/lib/invoices";
 import { AiCostSection } from "@/components/AiCostSection";
 import { CostSummary } from "@/components/CostSummary";
 import { getAiCosts } from "@/lib/ai-costs";
+import { getApiAiCosts } from "@/lib/ai-api-costs";
+import { ApiAiCostSection } from "@/components/ApiAiCostSection";
+import { AiLinksPanel } from "@/components/AiLinksPanel";
 import { SitesSection } from "@/components/SitesSection";
 import { getSites } from "@/lib/sites";
 import { NotConnected, ProjectTabs, parseTab } from "@/components/ProjectTabs";
@@ -50,7 +53,7 @@ export default async function ProjectPage({
   const moneyView = parseMoneyView(sp.m);
 
   // Fiecare tab citeste doar ce afiseaza
-  const [m, social, traffic, invoices, ai, sites, google, money, orgSize, connections, clarity] = await Promise.all([
+  const [m, social, traffic, invoices, ai, sites, google, money, orgSize, connections, clarity, apiAi] = await Promise.all([
     on(tab === "prezentare" || tab === "reclame" || tab === "bani", () => getMetrics(ids, since, until)),
     on(tab === "social" || tab === "bani", () => getSocialMetrics(ids, since, until)),
     on(tab === "prezentare" || tab === "trafic", () => getTraffic(ids, since, until)),
@@ -66,11 +69,15 @@ export default async function ProjectPage({
       orderBy: { createdAt: "asc" },
     }),
     on(tab === "trafic", () => getClarity(project.id, since, until)),
+    on(tab === "bani", () => getApiAiCosts(ids, since, until)),
   ]);
 
   const hasSocial = connections.some((c) => c.provider === "POSTINGCLIPS");
   const hasInvoices = connections.some((c) => c.provider === "OBLIO");
-  const hasAi = connections.some((c) => c.provider === "REPLICATE");
+  const hasReplicate = connections.some((c) => c.provider === "REPLICATE");
+  // Anthropic / OpenAI: proiectul are cel putin un workspace / proiect extern legat
+  const hasApiAi = (apiAi?.linked ?? 0) > 0;
+  const hasAi = hasReplicate || hasApiAi;
   // Doar la proiectele cu mai multe site-uri (ex. grupul print)
   const hasSites = (sites ?? []).filter((r) => r.site).length > 1;
   const periodLabel = `ultimele ${days} de zile`;
@@ -130,7 +137,7 @@ export default async function ProjectPage({
             days={days}
           />
         ))}
-      {tab === "bani" && m && social && ai && money && (
+      {tab === "bani" && m && social && ai && money && apiAi && (
         <>
           <MoneySection
             m={money.rows[0]}
@@ -141,7 +148,7 @@ export default async function ProjectPage({
             organizationId={project.organizationId}
             canEdit={role !== "VIEWER"}
             sharedWith={orgSize ?? 1}
-            hasAi={hasAi}
+            aiSources={[hasReplicate && "Replicate", hasApiAi && "Anthropic / OpenAI"].filter((x): x is string => !!x)}
           />
           <div className="flex flex-wrap items-center justify-between gap-2 pt-4">
             <h2 className="text-lg font-semibold">Detalii pe perioadă</h2>
@@ -151,14 +158,21 @@ export default async function ProjectPage({
             adSpend={m.spend}
             byProvider={m.byProvider}
             clipAdSpend={social.clipAdSpend}
-            aiUsd={hasAi ? ai.costUsd : null}
+            aiUsd={hasAi ? (hasReplicate ? ai.costUsd : 0) + apiAi.costUsd : null}
+            aiLabel={[hasReplicate && "Replicate (estimat)", hasApiAi && "Anthropic / OpenAI"].filter(Boolean).join(" + ")}
             revenue={m.revenue}
             currency={project.currency}
           />
-          {hasAi && <AiCostSection ai={ai} revenue={m.revenue} currency={project.currency} />}
+          {hasApiAi && <ApiAiCostSection ai={apiAi} />}
+          {hasReplicate && <AiCostSection ai={ai} revenue={m.revenue} currency={project.currency} />}
         </>
       )}
-      {tab === "conexiuni" && <ConnectionsPanel projectId={project.id} connections={connections} canEdit={role !== "VIEWER"} />}
+      {tab === "conexiuni" && (
+        <>
+          <ConnectionsPanel projectId={project.id} connections={connections} canEdit={role !== "VIEWER"} />
+          <AiLinksPanel projectId={project.id} organizationId={project.organizationId} canEdit={role !== "VIEWER"} />
+        </>
+      )}
     </div>
   );
 }

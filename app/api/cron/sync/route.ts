@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { syncAll } from "@/lib/sync";
+import { syncAiAccountsDue } from "@/lib/ai-accounts";
 import { purgeOldTracking } from "@/lib/tracking/collect";
 
 export const dynamic = "force-dynamic";
@@ -14,8 +15,10 @@ export async function POST(req: Request) {
   }
   const days = Math.min(Number(new URL(req.url).searchParams.get("days")) || 3, 90);
   const results = await syncAll(days);
+  // Costul AI din conturile Anthropic / OpenAI: o singura citire pe zi (restul rularilor il sar)
+  const ai = await syncAiAccountsDue().catch((e) => [{ ok: false as const, error: e instanceof Error ? e.message : String(e) }]);
   // Tine promisiunea de pastrare din nota de confidentialitate; o eroare aici nu opreste raspunsul
   await purgeOldTracking().catch((e) => console.error("[purge]", e instanceof Error ? e.message : e));
-  const failed = results.filter((r) => !r.ok);
-  return NextResponse.json({ synced: results.length, failed: failed.length, results }, { status: failed.length ? 207 : 200 });
+  const failed = [...results, ...ai].filter((r) => !r.ok);
+  return NextResponse.json({ synced: results.length, failed: failed.length, results, ai }, { status: failed.length ? 207 : 200 });
 }

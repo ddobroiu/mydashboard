@@ -33,6 +33,12 @@ Organizație (noi / mai târziu fiecare client)
   pe zi, după ora 3 (ora României), și îl salvează ca ziua de ieri (`ClarityDaily`); după o eroare reîncearcă la 2 ore, de maxim
   4 ori în 24 de ore. Blocul „Cum se poartă vizitatorii” e în tabul „Trafic”; salturile de erori JS / clicuri de nervi apar în
   raportul de dimineață. Conexiunile se pun la deploy cu `_deploy/clarity_mydashboard.cjs`.
+- `lib/integrations/ai-admin.ts` + `lib/ai-accounts.ts` + `lib/ai-api-costs.ts` + `/dashboard/ai` („Costuri AI”): costul facturat de
+  Anthropic (Usage & Cost Admin API, cheie `sk-ant-admin…`) și OpenAI (Costs + Usage API, cheie `sk-admin-…`). O cheie pe organizație
+  (`AiAccount`, criptată), costul pe zi UTC × workspace/proiect extern × model în `AiCostDaily`, iar `AiProjectLink` spune ce
+  workspace (`wrkspc_…`) / proiect OpenAI (`proj_…`) / `default` ține de ce proiect (atribuit la citire; ce nu e legat apare
+  „Neatribuit”). `/api/cron/sync` le citește o dată pe zi, după ora 5 (ultimele 7 zile; prima dată 90). Intră în „Bani” la AI.
+  Replicate rămâne estimat din timpul de rulare. Cheile și legăturile se pun la deploy cu `_deploy/ai_keys_mydashboard.cjs`.
 - `lib/daily-report.ts` + `/api/cron/report` + `/dashboard/raport`: raportul de dimineață pe e-mail (ieri vs. aceeași zi de
   săptămâna trecută), cu buton „Trimite acum raportul de test”.
 

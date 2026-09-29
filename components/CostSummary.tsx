@@ -13,6 +13,7 @@ export function CostSummary({
   byProvider,
   clipAdSpend,
   aiUsd,
+  aiLabel,
   revenue,
   currency,
 }: {
@@ -20,6 +21,7 @@ export function CostSummary({
   byProvider: { provider: Provider; spend: number }[];
   clipAdSpend: number;
   aiUsd: number | null;
+  aiLabel?: string;
   revenue: number;
   currency: string;
 }) {
@@ -43,7 +45,7 @@ export function CostSummary({
           value={formatMoney(clipAdSpend, currency)}
           sub="campaniile „Fă reclamă” (clip:… în nume); detalii în Social"
         />
-        <Tile label="Cost AI" value={aiUsd === null ? "–" : usd(aiUsd)} sub={aiUsd === null ? "Replicate nelegat" : "Replicate"} />
+        <Tile label="Cost AI" value={aiUsd === null ? "–" : usd(aiUsd)} sub={aiUsd === null ? "niciun cont AI legat" : aiLabel || "Replicate"} />
         <Tile
           label="Încasări minus reclame"
           value={formatMoney(revenue - adSpend, currency)}

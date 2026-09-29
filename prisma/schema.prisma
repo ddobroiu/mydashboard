@@ -31,6 +31,7 @@ model Organization {
   memberships Membership[]
   projects    Project[]
   fixedCosts  FixedCost[]
+  aiAccounts  AiAccount[]
 }
 
 enum Role {
@@ -78,6 +79,7 @@ model Project {
   gscTop         GscTop[]
   fixedCosts     FixedCost[]
   clarityDaily   ClarityDaily[]
+  aiLinks        AiProjectLink[]
 
   @@index([organizationId])
 }
@@ -96,6 +98,9 @@ enum Provider {
   MANUAL
   // Microsoft Clarity: cum se poarta vizitatorii pe site (derulare, clicuri de nervi, erori JS)
   CLARITY
+  // Contul de organizatie Anthropic / OpenAI (Admin API key): costul real al API-urilor AI, citit o data pe zi
+  ANTHROPIC_ADMIN
+  OPENAI_ADMIN
 }
 
 enum ConnectionStatus {
@@ -276,6 +281,71 @@ model AiUsageDaily {
 
   @@unique([connectionId, date, model])
   @@index([projectId, date])
+}
+
+// ─── Cost AI din conturile de organizatie (Anthropic, OpenAI) ───────────────
+// O cheie Admin pe organizatie si furnizor (nu pe proiect): acelasi cont Anthropic/OpenAI e folosit de mai multe
+// aplicatii, separate prin workspace-uri (Anthropic, wrkspc_...) sau proiecte (OpenAI, proj_...).
+model AiAccount {
+  id             String           @id @default(cuid())
+  organizationId String
+  // ANTHROPIC_ADMIN sau OPENAI_ADMIN
+  provider       Provider
+  label          String?
+  // {"adminKey": "..."} criptat AES-256-GCM (lib/crypto.ts)
+  credentials    String
+  // Numele workspace-urilor / proiectelor din cont, {"wrkspc_...": "3dview"}, reciteite la fiecare sincronizare
+  names          Json?
+  status         ConnectionStatus @default(ACTIVE)
+  lastSyncAt     DateTime?
+  // Ultima incercare (reusita sau nu), ca sa nu reincercam des dupa o eroare
+  lastTryAt      DateTime?
+  lastError      String?
+  createdAt      DateTime         @default(now())
+  organization   Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  links          AiProjectLink[]
+  costs          AiCostDaily[]
+
+  @@unique([organizationId, provider])
+}
+
+// Ce workspace (Anthropic) / proiect (OpenAI) apartine carui proiect din mydashboard. Costul se atribuie la citire,
+// asa ca o legatura adaugata tarziu se aplica si zilelor deja aduse. externalId "default" = workspace-ul implicit.
+model AiProjectLink {
+  id         String    @id @default(cuid())
+  accountId  String
+  externalId String
+  projectId  String
+  createdAt  DateTime  @default(now())
+  account    AiAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  project    Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([accountId, externalId])
+  @@index([projectId])
+}
+
+// Costul zilnic al unui cont AI: un rand pe zi (UTC, ca in facturile lor), workspace/proiect si model.
+// model = numele modelului, sau descrierea costului cand nu e legat de un model (ex. „Web Search Usage”).
+// Costul e cel facturat de furnizor (nu estimat), in USD. Tokenii de intrare includ si pe cei din cache.
+model AiCostDaily {
+  id             String    @id @default(cuid())
+  accountId      String
+  organizationId String
+  provider       Provider
+  date           DateTime  @db.Date
+  // wrkspc_... / proj_... sau "default"
+  externalId     String
+  model          String
+  costUsd        Decimal   @db.Decimal(14, 6)
+  inputTokens    BigInt    @default(0)
+  outputTokens   BigInt    @default(0)
+  cachedTokens   BigInt    @default(0)
+  // Numarul de cereri (doar OpenAI il da)
+  requests       Int       @default(0)
+  account        AiAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@unique([accountId, date, externalId, model])
+  @@index([organizationId, date])
 }
 
 // Microsoft Clarity: un rand pe zi. API-ul da doar totalul ultimelor 24 de ore (maxim 10 cereri pe zi),

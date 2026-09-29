@@ -38,7 +38,7 @@ export function MoneySection({
   organizationId,
   canEdit,
   sharedWith,
-  hasAi,
+  aiSources,
 }: {
   m: ProjectMoney;
   cur: Period;
@@ -48,7 +48,8 @@ export function MoneySection({
   organizationId: string;
   canEdit: boolean;
   sharedWith: number;
-  hasAi: boolean;
+  // „Replicate”, „Anthropic / OpenAI”; gol = niciun cont AI legat
+  aiSources: string[];
 }) {
   const money = (v: number) => formatMoneyFine(v, m.currency);
   const c = m.cur;
@@ -66,9 +67,13 @@ export function MoneySection({
       label: "AI",
       cur: c.ai,
       prev: p.ai,
-      source: hasAi ? "Replicate (calculat din timpul de rulare)" : "neurmărit",
-      badge: null,
-      note: hasAi ? "Anthropic și alte AI nu sunt încă incluse" : "Nu e legat niciun cont de AI (Anthropic nu e încă urmărit)",
+      source: aiSources.length ? aiSources.join(" + ") : "neurmărit",
+      badge: aiSources.includes("Replicate") ? "estimat" : null,
+      note: aiSources.length
+        ? aiSources.includes("Replicate")
+          ? "Replicate e calculat din timpul de rulare; Anthropic / OpenAI sunt sumele facturate"
+          : "sumele facturate de Anthropic / OpenAI"
+        : "Nu e legat niciun cont AI (Replicate, sau un workspace Anthropic / proiect OpenAI în Costuri AI)",
     },
     { label: "Reclame", cur: c.ads, prev: p.ads, source: "Meta Ads, Google Ads și cheltuieli introduse de mână", badge: null, note: null },
     {

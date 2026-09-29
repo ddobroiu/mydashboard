@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { BellRing, LayoutGrid, LogOut, Mail, Plus, Wallet } from "lucide-react";
+import { BellRing, Cpu, LayoutGrid, LogOut, Mail, Plus, Wallet } from "lucide-react";
 import { projectsForUser, requireUser } from "@/lib/access";
 import { prisma } from "@/lib/prisma";
 import { logout } from "./actions";
@@ -22,6 +22,9 @@ export default async function DashboardLayout({ children }: { children: React.Re
           </Link>
           <Link href="/dashboard/bani" className="flex items-center gap-2 rounded-md px-2 py-1.5 text-text-2 hover:bg-bg shrink-0">
             <Wallet size={16} /> Bani
+          </Link>
+          <Link href="/dashboard/ai" className="flex items-center gap-2 rounded-md px-2 py-1.5 text-text-2 hover:bg-bg shrink-0">
+            <Cpu size={16} /> Costuri AI
           </Link>
           <Link href="/dashboard/alerte" className="flex items-center gap-2 rounded-md px-2 py-1.5 text-text-2 hover:bg-bg shrink-0">
             <BellRing size={16} /> Alerte
