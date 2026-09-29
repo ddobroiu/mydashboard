@@ -8,7 +8,7 @@ import { prisma } from "@/lib/prisma";
 import { decryptJson, encryptJson } from "@/lib/crypto";
 import { adminOrganizations, requireProject, requireUser } from "@/lib/access";
 import { signOut } from "@/auth";
-import { SYNCABLE, syncConnection } from "@/lib/sync";
+import { SYNCABLE, storeClarity, syncConnection } from "@/lib/sync";
 import { testStripe } from "@/lib/integrations/stripe";
 import { normalizeAccountId, testMeta } from "@/lib/integrations/meta";
 import { testPostingClips } from "@/lib/integrations/postingclips";
@@ -16,6 +16,7 @@ import { sendOblioEinvoice, testOblio, type OblioCredentials } from "@/lib/integ
 import { testReplicate } from "@/lib/integrations/replicate";
 import { testOrdersDb } from "@/lib/integrations/orders-db";
 import { newScriptSecret } from "@/lib/integrations/google-ads";
+import { fetchClarityInsights, type ClarityRow } from "@/lib/integrations/clarity";
 import { PROVIDERS } from "@/lib/integrations/types";
 
 export async function logout() {
@@ -60,6 +61,7 @@ export async function addConnection(_prev: string | null, formData: FormData): P
   }
   let externalId = String(formData.get("externalId") ?? "").trim() || null;
   let label: string | null = null;
+  let clarity: ClarityRow | null = null;
 
   // Verificam cheia inainte s-o salvam, ca eroarea sa apara imediat, nu la prima sincronizare.
   try {
@@ -90,6 +92,11 @@ export async function addConnection(_prev: string | null, formData: FormData): P
       creds.project = creds.project.toLowerCase();
       creds.scriptSecret = newScriptSecret();
       label = `așteaptă scriptul din Google Ads${creds.project ? ` · [${creds.project}]` : ""}`;
+    } else if (provider === "CLARITY") {
+      if (!externalId) return "Completează Project ID-ul din Clarity.";
+      // Aceeasi cerere verifica tokenul si aduce primele cifre (Clarity da doar 10 cereri pe zi)
+      clarity = await fetchClarityInsights({ apiToken: creds.apiToken });
+      label = `proiect ${externalId}`;
     } else if (provider === "POSTINGCLIPS") {
       const me = await testPostingClips({ apiKey: creds.apiKey });
       label = me.brand ? `${me.brand.name} · ${me.email}` : `${me.email} · toate brandurile`;
@@ -104,6 +111,14 @@ export async function addConnection(_prev: string | null, formData: FormData): P
 
   // Google Ads trimite el datele: mergi la pagina cu scriptul de pus in cont
   if (provider === "GOOGLE_ADS") redirect(`/dashboard/projects/${projectId}/google-ads?c=${conn.id}`);
+
+  // Clarity: cifrele citite la verificare devin randul de ieri; urmatoarea citire, maine dimineata
+  if (clarity) {
+    await storeClarity(conn, clarity);
+    await prisma.connection.update({ where: { id: conn.id }, data: { lastSyncAt: new Date() } });
+    revalidatePath(`/dashboard/projects/${projectId}`);
+    return null;
+  }
 
   // Prima sincronizare aduce ultimele 90 de zile.
   const res = await syncConnection(conn.id, 90);

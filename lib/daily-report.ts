@@ -3,6 +3,7 @@ import { addDays, dayDate, dayKey } from "@/lib/dates";
 import { convert, getRates } from "@/lib/fx";
 import { formatMoney } from "@/lib/metrics";
 import { channelOf, simpleChannelOf } from "@/lib/tracking/sources";
+import { clarityForReport } from "@/lib/clarity";
 
 // Raportul de dimineata: ieri fata de aceeasi zi de saptamana trecuta, pe proiect si total.
 
@@ -19,6 +20,8 @@ export type ReportProject = {
   revenueRonW: number;
   topSource: string | null;
   alerts: string[];
+  // Microsoft Clarity, ieri: clicuri de nervi si erori JavaScript (null = fara Clarity sau fara date)
+  clarity: { rageClicks: number; scriptErrors: number } | null;
 };
 
 export type DailyReport = {
@@ -53,12 +56,13 @@ export async function buildDailyReport(today = dayKey(new Date())): Promise<Dail
   const days = [dayDate(day), dayDate(compareDay)];
   const where = { projectId: { in: ids }, date: { in: days } };
 
-  const [visitors, tx, sources, gsc, alerts] = await Promise.all([
+  const [visitors, tx, sources, gsc, alerts, clarity] = await Promise.all([
     prisma.trackSession.groupBy({ by: ["projectId", "date", "visitorId"], where }),
     prisma.transaction.groupBy({ by: ["projectId", "date", "currency"], where: { ...where, amount: { gt: 0 } }, _sum: { amount: true }, _count: { _all: true } }),
     prisma.trackSession.groupBy({ by: ["projectId", "source", "medium", "clickType"], where: { projectId: { in: ids }, date: dayDate(day) }, _count: { _all: true } }),
     prisma.gscDaily.findMany({ where, select: { projectId: true, date: true, clicks: true } }),
     prisma.alertState.findMany({ where: { active: true }, select: { project: true, message: true, kind: true } }),
+    clarityForReport(ids, day),
   ]);
   // Rambursarile (sume negative) scad din vanzari
   const refunds = await prisma.transaction.groupBy({ by: ["projectId", "date", "currency"], where: { ...where, amount: { lt: 0 } }, _sum: { amount: true } });
@@ -66,7 +70,7 @@ export async function buildDailyReport(today = dayKey(new Date())): Promise<Dail
   const isY = (d: Date) => d.getTime() === days[0].getTime();
   const empty = (): Nums => ({ visitors: 0, orders: 0, revenue: 0, google: null });
   const rows = new Map<string, ReportProject>(
-    projects.map((p) => [p.id, { ...p, y: empty(), w: empty(), revenueRon: 0, revenueRonW: 0, topSource: null, alerts: [] }]),
+    projects.map((p) => [p.id, { ...p, y: empty(), w: empty(), revenueRon: 0, revenueRonW: 0, topSource: null, alerts: [], clarity: null }]),
   );
 
   for (const v of visitors) {
@@ -108,6 +112,8 @@ export async function buildDailyReport(today = dayKey(new Date())): Promise<Dail
     const pid = a.project ? byName.get(a.project.toLowerCase().replace(/\.(ro|com|ai|net|info)$/, "")) ?? byName.get(a.project.toLowerCase()) : undefined;
     if (pid) rows.get(pid)!.alerts.push(a.message);
   }
+
+  for (const [pid, c] of clarity) rows.get(pid)!.clarity = { rageClicks: c.rageClicks, scriptErrors: c.scriptErrors };
 
   const list = [...rows.values()];
   const sum = (f: (r: ReportProject) => number) => list.reduce((s, r) => s + f(r), 0);
@@ -154,6 +160,24 @@ export async function buildDailyReport(today = dayKey(new Date())): Promise<Dail
       });
     }
   }
+  // Clarity: salt de erori JavaScript sau de clicuri de nervi fata de media ultimelor 7 zile
+  for (const r of list) {
+    const c = clarity.get(r.id);
+    if (!c) continue;
+    const spike = (cur: number, avg: number | null, min: number) => cur >= min && (avg === null || cur >= Math.max(2 * avg, avg + min));
+    if (spike(c.scriptErrors, c.avgErrors, 10)) {
+      hs.push({
+        score: c.scriptErrors,
+        text: `${r.name}: ${deN(c.scriptErrors, c.scriptErrors === 1 ? "eroare" : "erori")} JavaScript la vizitatori ieri${c.avgErrors !== null ? ` (de obicei ~${n(c.avgErrors)} pe zi)` : ""}. Vezi în Clarity ce pagină le dă.`,
+      });
+    }
+    if (spike(c.rageClicks, c.avgRage, 5)) {
+      hs.push({
+        score: c.rageClicks,
+        text: `${r.name}: ${deN(c.rageClicks, c.rageClicks === 1 ? "clic" : "clicuri")} de nervi ieri${c.avgRage !== null ? ` (de obicei ~${n(c.avgRage)} pe zi)` : ""}: ceva nu răspunde cum se așteaptă oamenii.`,
+      });
+    }
+  }
   const highlights = hs.sort((a, b) => b.score - a.score).slice(0, 3).map((h) => h.text);
 
   const label = (d: string) =>
@@ -197,6 +221,9 @@ export function renderDailyReport(r: DailyReport, siteUrl = "https://mydashboard
       `<b>${n(p.y.orders)}</b> ${p.y.orders === 1 ? "vânzare" : "vânzări"}${p.y.revenue ? ` · <b>${esc(formatMoney(p.y.revenue, p.currency))}</b>` : ""} ${arrow(p.y.revenue, p.w.revenue)}`,
       p.y.google !== null ? `<b>${n(p.y.google)}</b> ${p.y.google === 1 ? "clic" : "clicuri"} din Google ${p.w.google !== null ? arrow(p.y.google, p.w.google) : ""}` : null,
       p.topSource ? `vin mai ales din: ${esc(p.topSource)}` : null,
+      p.clarity && (p.clarity.rageClicks || p.clarity.scriptErrors)
+        ? `Clarity: ${n(p.clarity.rageClicks)} clicuri de nervi · ${n(p.clarity.scriptErrors)} erori JavaScript`
+        : null,
     ].filter(Boolean);
     const alerts = p.alerts.length
       ? `<div style="margin-top:4px;font-size:13px;color:#c0362f">⚠ ${p.alerts.length === 1 ? "1 alertă" : `${p.alerts.length} alerte`}: ${esc(p.alerts[0].slice(0, 140))}</div>`

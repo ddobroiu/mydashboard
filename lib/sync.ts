@@ -2,16 +2,17 @@ import { raiseAlert, resolveAlert } from "@/lib/alerts";
 import type { Connection } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { decryptJson } from "@/lib/crypto";
-import { addDays, dayDate, dayKey, lastNDays } from "@/lib/dates";
+import { TZ, addDays, dayDate, dayKey, lastNDays } from "@/lib/dates";
 import { fetchStripeTransactions, type StripeCredentials } from "@/lib/integrations/stripe";
 import { fetchMetaSpend, type MetaCredentials } from "@/lib/integrations/meta";
 import { fetchPostingClipsPosts, type PostingClipsCredentials } from "@/lib/integrations/postingclips";
 import { fetchOblioInvoices, type InvoiceRow, type OblioCredentials } from "@/lib/integrations/oblio";
 import { fetchReplicateUsage, type AiUsageRow, type ReplicateCredentials } from "@/lib/integrations/replicate";
 import { fetchDbOrders, type OrdersDbCredentials } from "@/lib/integrations/orders-db";
+import { fetchClarityInsights, type ClarityCredentials, type ClarityRow } from "@/lib/integrations/clarity";
 import type { AdSpendRow, SocialPostRow, TransactionRow } from "@/lib/integrations/types";
 
-export const SYNCABLE = ["STRIPE", "META", "POSTINGCLIPS", "OBLIO", "REPLICATE", "ORDERS_DB"] as const;
+export const SYNCABLE = ["STRIPE", "META", "POSTINGCLIPS", "OBLIO", "REPLICATE", "ORDERS_DB", "CLARITY"] as const;
 
 // Vizualizarile unui clip mai cresc cam o luna dupa postare (si PostingClips
 // le reciteste tot 30 de zile), asa ca rescriem mereu cel putin atat.
@@ -127,6 +128,41 @@ async function replaceAiUsage(conn: Connection, since: string, until: string, ro
   ]);
 }
 
+// Clarity: randul zilei de ieri (API-ul da totalul ultimelor 24 de ore; citit dupa ora 3 ≈ ziua de ieri)
+export async function storeClarity(conn: Pick<Connection, "id" | "projectId">, row: ClarityRow, day = addDays(dayKey(new Date()), -1)) {
+  const date = dayDate(day);
+  await prisma.clarityDaily.upsert({
+    where: { connectionId_date: { connectionId: conn.id, date } },
+    create: { ...row, projectId: conn.projectId, connectionId: conn.id, date },
+    update: { ...row, fetchedAt: new Date() },
+  });
+}
+
+// Clarity permite 10 cereri pe zi, iar sync-ul ruleaza la 10 minute. O singura citire reusita pe zi
+// (cand ziua de ieri inca n-are rand); dupa o eroare reincercam cel mult o data la 2 ore si de maxim 4 ori in 24 de ore.
+const CLARITY_RETRY_MS = 2 * 60 * 60 * 1000;
+const CLARITY_MAX_TRIES = 4;
+
+// Dupa ora 3 (ora Romaniei): Clarity mai proceseaza vizitele cateva ore, iar noaptea e trafic putin,
+// asa ca fereastra de 24 de ore (3:00 ieri - 3:00 azi) acopera practic ziua de ieri.
+const CLARITY_FROM_HOUR = 3;
+
+async function clarityDue(connectionId: string, firstTime: boolean): Promise<boolean> {
+  const hour = Number(new Intl.DateTimeFormat("en-GB", { timeZone: TZ, hour: "2-digit", hourCycle: "h23" }).format(new Date()));
+  if (!firstTime && hour < CLARITY_FROM_HOUR) return false;
+  const yesterday = dayDate(addDays(dayKey(new Date()), -1));
+  const have = await prisma.clarityDaily.findUnique({ where: { connectionId_date: { connectionId, date: yesterday } }, select: { id: true } });
+  if (have) return false;
+  const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const tries = await prisma.syncRun.findMany({
+    where: { connectionId, startedAt: { gte: dayAgo } },
+    select: { startedAt: true },
+    orderBy: { startedAt: "desc" },
+  });
+  if (tries.length >= CLARITY_MAX_TRIES) return false;
+  return !tries[0] || Date.now() - tries[0].startedAt.getTime() >= CLARITY_RETRY_MS;
+}
+
 async function runProvider(conn: Connection, since: string, until: string): Promise<number> {
   switch (conn.provider) {
     case "STRIPE": {
@@ -161,6 +197,11 @@ async function runProvider(conn: Connection, since: string, until: string): Prom
       await replaceSocialPosts(conn, from, rows);
       return rows.length;
     }
+    case "CLARITY": {
+      const row = await fetchClarityInsights(decryptJson<ClarityCredentials>(conn.credentials));
+      await storeClarity(conn, row);
+      return 1;
+    }
     default:
       throw new Error(`Integrarea ${conn.provider} nu e inca disponibila`);
   }
@@ -168,6 +209,8 @@ async function runProvider(conn: Connection, since: string, until: string): Prom
 
 export async function syncConnection(connectionId: string, days = 3) {
   const conn = await prisma.connection.findUniqueOrThrow({ where: { id: connectionId } });
+  // Clarity: o data pe zi, oricat de des ar rula sync-ul (si la „Sincronizează acum”)
+  if (conn.provider === "CLARITY" && !(await clarityDue(conn.id, !conn.lastSyncAt))) return { ok: true as const, rows: 0, skipped: true };
   const { since, until } = lastNDays(days);
   const run = await prisma.syncRun.create({ data: { connectionId } });
 
@@ -180,14 +223,14 @@ export async function syncConnection(connectionId: string, days = 3) {
         data: { status: "ACTIVE", lastSyncAt: new Date(), lastError: null },
       }),
     ]);
-    return { ok: true as const, rows };
+    return { ok: true as const, rows, skipped: false };
   } catch (e) {
     const error = e instanceof Error ? e.message : String(e);
     await prisma.$transaction([
       prisma.syncRun.update({ where: { id: run.id }, data: { finishedAt: new Date(), ok: false, error } }),
       prisma.connection.update({ where: { id: conn.id }, data: { status: "ERROR", lastError: error } }),
     ]);
-    return { ok: false as const, error };
+    return { ok: false as const, error, skipped: false };
   }
 }
 
@@ -210,7 +253,8 @@ export async function syncAll(days = 3) {
   for (const c of conns) {
     const r = await syncConnection(c.id, days);
     results.push({ id: c.id, ...r });
-    await alertOnSync(c.id, r.ok ? null : String(r.error ?? "eroare necunoscută")).catch(() => {});
+    // Sarita (Clarity deja citit azi): nu schimbam starea alertei
+    if (!r.skipped) await alertOnSync(c.id, r.ok ? null : String(r.error ?? "eroare necunoscută")).catch(() => {});
   }
   return results;
 }

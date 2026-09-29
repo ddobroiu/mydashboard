@@ -28,6 +28,11 @@ Organizație (noi / mai târziu fiecare client)
   (doar peste 50 de clicuri/săptămână) sau când citirea eșuează.
 - `lib/money.ts` + `/dashboard/bani` + tabul „Bani”: vânzări − costuri (comision Stripe, AI, reclame, costuri fixe) = profit,
   luna asta vs. aceleași zile din luna trecută. Sumele în alte monede se schimbă la cursul BNR (`lib/fx.ts`).
+- `lib/integrations/clarity.ts` + `lib/clarity.ts`: Microsoft Clarity (conexiunea CLARITY: Project ID + token din Settings → Data
+  Export). API-ul dă doar totalul ultimelor 24 de ore și maxim 10 cereri pe zi, așa că `/api/cron/sync` îl citește o singură dată
+  pe zi, după ora 3 (ora României), și îl salvează ca ziua de ieri (`ClarityDaily`); după o eroare reîncearcă la 2 ore, de maxim
+  4 ori în 24 de ore. Blocul „Cum se poartă vizitatorii” e în tabul „Trafic”; salturile de erori JS / clicuri de nervi apar în
+  raportul de dimineață. Conexiunile se pun la deploy cu `_deploy/clarity_mydashboard.cjs`.
 - `lib/daily-report.ts` + `/api/cron/report` + `/dashboard/raport`: raportul de dimineață pe e-mail (ieri vs. aceeași zi de
   săptămâna trecută), cu buton „Trimite acum raportul de test”.
 

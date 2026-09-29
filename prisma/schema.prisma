@@ -77,6 +77,7 @@ model Project {
   gscDaily       GscDaily[]
   gscTop         GscTop[]
   fixedCosts     FixedCost[]
+  clarityDaily   ClarityDaily[]
 
   @@index([organizationId])
 }
@@ -93,6 +94,8 @@ enum Provider {
   ORDERS_DB
   // Cheltuieli introduse de mana (influenceri, flyere...); o conexiune ascunsa per proiect
   MANUAL
+  // Microsoft Clarity: cum se poarta vizitatorii pe site (derulare, clicuri de nervi, erori JS)
+  CLARITY
 }
 
 enum ConnectionStatus {
@@ -120,6 +123,7 @@ model Connection {
   socialPosts  SocialPost[]
   invoices     Invoice[]
   aiUsage      AiUsageDaily[]
+  clarityDaily ClarityDaily[]
   syncRuns     SyncRun[]
 
   @@index([projectId])
@@ -271,6 +275,39 @@ model AiUsageDaily {
   connection   Connection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
 
   @@unique([connectionId, date, model])
+  @@index([projectId, date])
+}
+
+// Microsoft Clarity: un rand pe zi. API-ul da doar totalul ultimelor 24 de ore (maxim 10 cereri pe zi),
+// asa ca il citim o singura data pe zi, dupa miezul noptii, si il punem pe ziua de ieri.
+// Timpii sunt in secunde, pe vizita; derularea in procente din pagina.
+model ClarityDaily {
+  id                     String     @id @default(cuid())
+  projectId              String
+  connectionId           String
+  date                   DateTime   @db.Date
+  sessions               Int        @default(0)
+  botSessions            Int        @default(0)
+  users                  Int        @default(0)
+  pagesPerSession        Float?
+  scrollDepth            Float?
+  totalTime              Float?
+  activeTime             Float?
+  // Numarul de evenimente (subTotal) si procentul de vizite in care au aparut
+  rageClicks             Int        @default(0)
+  rageSessionsPct        Float?
+  deadClicks             Int        @default(0)
+  deadSessionsPct        Float?
+  quickbacks             Int        @default(0)
+  excessiveScroll        Int        @default(0)
+  scriptErrors           Int        @default(0)
+  scriptErrorSessionsPct Float?
+  errorClicks            Int        @default(0)
+  fetchedAt              DateTime   @default(now())
+  project                Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  connection             Connection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+
+  @@unique([connectionId, date])
   @@index([projectId, date])
 }
 

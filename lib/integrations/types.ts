@@ -54,7 +54,7 @@ export type SocialPostRow = {
 export type ProviderInfo = {
   provider: Provider;
   name: string;
-  kind: "ads" | "revenue" | "social" | "costs";
+  kind: "ads" | "revenue" | "social" | "costs" | "behavior";
   available: boolean;
   externalIdLabel?: string;
   externalIdHint?: string;
@@ -163,6 +163,21 @@ export const PROVIDERS: ProviderInfo[] = [
         label: "Eticheta proiectului în numele campaniilor (opțional)",
         type: "text",
         hint: "Când contul de reclame e comun: doar campaniile al căror nume conține [eticheta], ex. [3dview]. Gol = toate campaniile contului. După ce conectezi primești un script de pus în Google Ads.",
+      },
+    ],
+  },
+  {
+    provider: "CLARITY",
+    name: "Microsoft Clarity",
+    kind: "behavior",
+    available: true,
+    externalIdLabel: "Project ID Clarity",
+    externalIdHint: "Din adresa proiectului în Clarity: clarity.microsoft.com/projects/view/<ID>/dashboard",
+    fields: [
+      {
+        key: "apiToken",
+        label: "Token API Clarity",
+        hint: "Clarity → Settings → Data Export → Generate new API token. Cifrele se aduc o dată pe zi, dimineața (Clarity dă doar 10 cereri pe zi).",
       },
     ],
   },

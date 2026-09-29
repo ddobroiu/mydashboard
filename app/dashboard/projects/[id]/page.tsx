@@ -26,6 +26,8 @@ import { getGoogleReport } from "@/lib/gsc-report";
 import { MoneySection } from "@/components/MoneySection";
 import { getMoney, parseMoneyView } from "@/lib/money";
 import { SourcesMoney } from "@/components/SourcesMoney";
+import { ClaritySection } from "@/components/ClaritySection";
+import { getClarity } from "@/lib/clarity";
 
 export default async function ProjectPage({
   params,
@@ -48,7 +50,7 @@ export default async function ProjectPage({
   const moneyView = parseMoneyView(sp.m);
 
   // Fiecare tab citeste doar ce afiseaza
-  const [m, social, traffic, invoices, ai, sites, google, money, orgSize, connections] = await Promise.all([
+  const [m, social, traffic, invoices, ai, sites, google, money, orgSize, connections, clarity] = await Promise.all([
     on(tab === "prezentare" || tab === "reclame" || tab === "bani", () => getMetrics(ids, since, until)),
     on(tab === "social" || tab === "bani", () => getSocialMetrics(ids, since, until)),
     on(tab === "prezentare" || tab === "trafic", () => getTraffic(ids, since, until)),
@@ -63,6 +65,7 @@ export default async function ProjectPage({
       select: { id: true, provider: true, label: true, externalId: true, status: true, lastSyncAt: true, lastError: true },
       orderBy: { createdAt: "asc" },
     }),
+    on(tab === "trafic", () => getClarity(project.id, since, until)),
   ]);
 
   const hasSocial = connections.some((c) => c.provider === "POSTINGCLIPS");
@@ -100,6 +103,7 @@ export default async function ProjectPage({
         <>
           {traffic.lastHitAt && <SourcesMoney t={traffic} currency={project.currency} periodLabel={periodLabel} />}
           <TrafficSection t={traffic} currency={project.currency} projectId={project.id} />
+          <ClaritySection c={clarity} basePath={base} days={days} />
         </>
       )}
       {tab === "google" && google && <GoogleSection g={google} basePath={base} />}

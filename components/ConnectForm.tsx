@@ -65,7 +65,11 @@ export function ConnectForm({ projectId, providers }: { projectId: string; provi
           )}
           {error && <p className="text-sm text-bad">{error}</p>}
           <button className="btn" disabled={pending}>
-            {pending ? "Verific și aduc ultimele 90 de zile..." : `Conectează ${info.name}`}
+            {pending
+              ? info.provider === "CLARITY"
+                ? "Verific tokenul și aduc ultimele 24 de ore..."
+                : "Verific și aduc ultimele 90 de zile..."
+              : `Conectează ${info.name}`}
           </button>
         </>
       )}
