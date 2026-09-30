@@ -60,13 +60,24 @@ async function token(c: OblioCredentials): Promise<string> {
   return body.access_token as string;
 }
 
+// Oblio da acelasi token cat e valabil (1 ora), deci unul cerut in ultimele secunde expira imediat:
+// la 401 cerem altul dupa o scurta pauza si reincercam o singura data
+const isExpired = (status: number, body: { statusMessage?: string }) => status !== 200 && /expired/i.test(body.statusMessage ?? "");
+
 async function list(c: OblioCredentials, params: Record<string, string>): Promise<OblioInvoice[]> {
-  const auth = await token(c);
+  let auth = await token(c);
   const out: OblioInvoice[] = [];
   for (let offset = 0; offset < 20000; offset += 100) {
     const q = new URLSearchParams({ ...params, limitPerPage: "100", offset: String(offset), orderBy: "issueDate", orderDir: "ASC" });
-    const res = await fetch(`${BASE}/docs/invoice/list?${q}`, { headers: { authorization: `Bearer ${auth}` }, cache: "no-store" });
-    const body = await res.json().catch(() => ({}));
+    const get = () => fetch(`${BASE}/docs/invoice/list?${q}`, { headers: { authorization: `Bearer ${auth}` }, cache: "no-store" });
+    let res = await get();
+    let body = await res.json().catch(() => ({}));
+    if (isExpired(res.status, body)) {
+      await new Promise((r) => setTimeout(r, 5000));
+      auth = await token(c);
+      res = await get();
+      body = await res.json().catch(() => ({}));
+    }
     if (!res.ok) throw new Error(`Oblio: ${body.statusMessage ?? res.statusText}`);
     const page: OblioInvoice[] = Array.isArray(body.data) ? body.data : [];
     out.push(...page);
