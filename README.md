@@ -40,19 +40,23 @@ Organizație (noi / mai târziu fiecare client)
   „Neatribuit”). `/api/cron/sync` le citește o dată pe zi, după ora 5 (ultimele 7 zile; prima dată 90). Intră în „Bani” la AI.
   Replicate rămâne estimat din timpul de rulare. Cheile și legăturile se pun la deploy cu `_deploy/ai_keys_mydashboard.cjs`.
 - `lib/daily-report.ts` + `/api/cron/report` + `/dashboard/raport`: raportul de dimineață pe e-mail (ieri vs. aceeași zi de
-  săptămâna trecută), cu buton „Trimite acum raportul de test”.
+  săptămâna trecută), cu buton „Trimite acum raportul de test”. Secțiunea „Din aplicații – ultimele 24 h” citește în paralel
+  `/api/mydashboard/stats` al fiecărui proiect (max ~6 cifre pe aplicație, `h24` sau „azi” dacă aplicația nu trimite `h24`);
+  facturile neemise apar cu roșu și intră primele în „Ce s-a schimbat”.
 
 ## Joburi programate (crontab pe server, ora UTC)
 
 ```cron
 */10 * * * * /usr/local/bin/mydashboard-sync.sh >> /var/log/mydashboard-sync.log 2>&1
 # Google Search Console, o dată pe zi (06:00/07:00 în România), înainte de raport
-0 4 * * * CS=$(grep -E "^CRON_SECRET=" /opt/apps/mydashboard/.env | cut -d= -f2- | tr -d '"'); curl -s -o /dev/null -w "gsc %{http_code}
-" -X POST -H "Authorization: Bearer $CS" --max-time 290 https://mydashboard.ro/api/cron/gsc >> /var/log/mydashboard-sync.log 2>&1
+0 4 * * * CS=$(grep -E "^CRON_SECRET=" /opt/apps/mydashboard/.env | cut -d= -f2- | tr -d '"'); curl -s -o /dev/null -w "gsc \%{http_code}\n" -X POST -H "Authorization: Bearer $CS" --max-time 290 https://mydashboard.ro/api/cron/gsc >> /var/log/mydashboard-sync.log 2>&1
 # Raportul de dimineață la 07:30 în România: rulează la 04:30 și 05:30 UTC, trimite doar cel care cade la ora 7 (vară/iarnă)
-30 4,5 * * * CS=$(grep -E "^CRON_SECRET=" /opt/apps/mydashboard/.env | cut -d= -f2- | tr -d '"'); curl -s -o /dev/null -w "raport %{http_code}
-" -X POST -H "Authorization: Bearer $CS" --max-time 110 https://mydashboard.ro/api/cron/report >> /var/log/mydashboard-sync.log 2>&1
+30 4,5 * * * CS=$(grep -E "^CRON_SECRET=" /opt/apps/mydashboard/.env | cut -d= -f2- | tr -d '"'); curl -s -o /dev/null -w "raport \%{http_code}\n" -X POST -H "Authorization: Bearer $CS" --max-time 110 https://mydashboard.ro/api/cron/report >> /var/log/mydashboard-sync.log 2>&1
 ```
+
+În crontab `%` înseamnă linie nouă, de aceea e scris `\%{http_code}`; fiecare job stă pe un singur rând. Raportul se trimite
+cu Resend (`RESEND_API_KEY`) la `ALERT_EMAIL`. Verificare pe server: `crontab -l | grep cron/report` și, după 07:30,
+`grep raport /var/log/mydashboard-sync.log` (`raport 200` la ambele apeluri; doar cel din ora 7 trimite e-mailul).
 
 Cheia Search Console pe server: `base64 -w0 gsc-key.json` → `GSC_SERVICE_ACCOUNT_JSON=...` în `.env` (și în secretul
 `ENV_CONTENTS`). Alternativ fișierul în `/opt/apps/mydashboard/secrets/gsc-key.json`, montat în container
@@ -92,14 +96,24 @@ node -e "console.log(require('crypto').createHmac('sha256', process.env.CRON_SEC
   "kpi": [                               // max 24 rânduri, în ordinea în care se afișează
     { "key": "conturi", "label": "Conturi noi", "unit": "count",   // count | money | percent
       "hint": "opțional, text mic sub etichetă",
+      "h24": 1,                                                  // opțional: ultimele 24 de ore (fereastră mobilă)
       "today": 1, "d7": 4, "d30": 14, "total": 290 }             // zile din România; null = „–”
   ],
   "recent": [                            // opțional, max 50 (se afișează 10)
-    { "at": "2026-09-26T09:12:00Z", "title": "100 firme", "detail": "client@exemplu.ro",
+    { "at": "2026-09-26T09:12:00Z", "title": "100 firme", "detail": "Ion Pop · client@exemplu.ro · factura CDV 12",
       "amount": 75.5, "status": "paid" }                         // paid | pending | abandoned | failed | alt text
   ]
 }
 ```
+
+`h24` e opțional (aplicațiile care trimit doar `today/d7/d30/total` merg în continuare): dacă cel puțin un rând are `h24`,
+pagina proiectului arată coloana „24 h” înaintea lui „Azi”, iar raportul de dimineață folosește `h24` (altfel `today`, marcat
+„azi”). În raport intră până la ~6 rânduri pe aplicație, fără procente/medii și fără cele cu 0/null; un rând „Facturi neemise”
+(cheia `facturiNeemise` sau eticheta „Facturi neemise”) apare mereu când e > 0 (inclusiv `total`), cu roșu.
+
+`recent[].detail` poate conține clientul și starea facturii, separate prin ` · `: `"Nume · email · factura CDV 12"` sau, când
+factura n-a fost emisă, `"Nume · email · FĂRĂ FACTURĂ: motiv"` (întotdeauna ultimul). Pagina arată detaliul întreg, iar partea
+care începe cu „FĂRĂ FACTURĂ” apare ca etichetă roșie.
 
 Sumele sunt în unități întregi ale monedei (lei, nu bani). Nu trimite încasări care vin deja din Stripe ca „venit” fără o
 etichetă clară; secțiunea e pentru ce vede aplicația (conturi, comenzi, produse vândute). Implementare de referință:

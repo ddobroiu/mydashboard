@@ -4,6 +4,7 @@ import { convert, getRates } from "@/lib/fx";
 import { formatMoney } from "@/lib/metrics";
 import { channelOf, simpleChannelOf } from "@/lib/tracking/sources";
 import { clarityForReport } from "@/lib/clarity";
+import { getAppStats, type AppStats } from "@/lib/app-stats";
 
 // Raportul de dimineata: ieri fata de aceeasi zi de saptamana trecuta, pe proiect si total.
 
@@ -24,6 +25,13 @@ export type ReportProject = {
   clarity: { rageClicks: number; scriptErrors: number } | null;
 };
 
+// Cifrele din aplicatii (/api/mydashboard/stats): ultimele 24 h (h24) sau, la aplicatiile fara h24, ziua de azi
+export type ReportApp = {
+  name: string;
+  basis: "24 h" | "azi";
+  kpis: { label: string; value: string; bad: boolean }[];
+};
+
 export type DailyReport = {
   day: string;
   compareDay: string;
@@ -33,6 +41,7 @@ export type DailyReport = {
   total: { visitors: number; visitorsW: number; orders: number; ordersW: number; revenueRon: number; revenueRonW: number; google: number; googleW: number | null };
   highlights: string[];
   activeAlerts: number;
+  apps: ReportApp[];
 };
 
 // „fata de marțea trecută”
@@ -40,6 +49,51 @@ const LAST_WEEKDAY = ["duminica trecută", "lunea trecută", "marțea trecută",
 const WEEKDAY = ["duminică", "luni", "marți", "miercuri", "joi", "vineri", "sâmbătă"];
 
 const n = (v: number) => Math.round(v).toLocaleString("ro-RO");
+
+type AppKpi = AppStats["kpi"][number];
+const isUnissued = (k: AppKpi) => /factur\w*\s+neemis/i.test(k.label) || /^(facturiNeemise|invoices_?missing|unissued_?invoices)$/i.test(k.key);
+// Ordinea in raport: ce conteaza dimineata; restul KPI-urilor vin dupa, in ordinea aplicatiei
+const PRIORITY = [/conturi noi|^users$/i, /(?<!ne)plătite|^orders$/i, /încasat|^revenue$/i, /neemis/i, /neplătit|neterminat|^unpaid$|^pending$/i, /eșuat|^email_?failed$/i];
+const MAX_APP_KPIS = 6;
+
+// KPI-urile unei aplicatii pentru raport: fara procente si medii, fara cele cu 0/null (in afara de facturile neemise > 0)
+function appForReport(name: string, s: AppStats, currency: string): ReportApp {
+  const basis = s.kpi.some((k) => k.h24 !== undefined && k.h24 !== null) ? "24 h" : "azi";
+  const val = (k: AppKpi) => (basis === "24 h" ? k.h24 : k.today) ?? null;
+  const rank = (k: AppKpi) => {
+    const i = PRIORITY.findIndex((re) => re.test(k.label) || re.test(k.key));
+    return i < 0 ? PRIORITY.length : i;
+  };
+  const fmt = (v: number, k: AppKpi) => (k.unit === "money" ? formatMoney(v, s.currency || currency) : n(v));
+  const list = s.kpi
+    .map((k, i) => ({ k, i }))
+    .filter(({ k }) => {
+      if (isUnissued(k)) return (val(k) ?? 0) > 0 || (k.total ?? 0) > 0;
+      if (k.unit === "percent" || /medi[ea]/i.test(k.label)) return false;
+      const v = val(k);
+      return v !== null && v !== 0;
+    })
+    .sort((a, b) => rank(a.k) - rank(b.k) || a.i - b.i);
+  // facturile neemise intra mereu, chiar daca depasesc limita
+  const picked = list.slice(0, MAX_APP_KPIS);
+  const unissued = list.find(({ k }) => isUnissued(k));
+  if (unissued && !picked.includes(unissued)) picked[picked.length - 1] = unissued;
+  picked.sort((a, b) => rank(a.k) - rank(b.k) || a.i - b.i);
+  return {
+    name,
+    basis,
+    kpis: picked.map(({ k }) => {
+      const v = val(k) ?? 0;
+      if (!isUnissued(k)) return { label: k.label, value: fmt(v, k), bad: false };
+      // la facturi conteaza si cele ramase din urma (total), nu doar cele din ultimele 24 h
+      const total = k.total ?? v;
+      return { label: k.label, value: total > v ? (v ? `${n(v)} noi, ${n(total)} în total` : `${n(total)} în total`) : n(v), bad: true };
+    }),
+  };
+}
+
+const unissuedCount = (s: AppStats, basis: ReportApp["basis"]) =>
+  s.kpi.filter(isUnissued).reduce((m, k) => Math.max(m, k.total ?? 0, (basis === "24 h" ? k.h24 : k.today) ?? 0), 0);
 const deN = (v: number, word: string) => {
   const r = Math.round(v);
   return `${n(r)}${r >= 20 && (r % 100 === 0 || r % 100 >= 20) ? " de" : ""} ${word}`;
@@ -51,11 +105,13 @@ export async function buildDailyReport(today = dayKey(new Date())): Promise<Dail
   const weekday = dayDate(day).getUTCDay();
   const rates = await getRates();
 
-  const projects = await prisma.project.findMany({ select: { id: true, name: true, currency: true }, orderBy: { name: "asc" } });
+  const projects = await prisma.project.findMany({ select: { id: true, name: true, currency: true, domain: true }, orderBy: { name: "asc" } });
   const ids = projects.map((p) => p.id);
   const days = [dayDate(day), dayDate(compareDay)];
   const where = { projectId: { in: ids }, date: { in: days } };
 
+  // Statisticile din aplicatii, in paralel (8 secunde maxim fiecare); fara endpoint sau cu eroare = sarim proiectul
+  const appStatsP = Promise.all(projects.map((p) => getAppStats(p.name, p.domain).catch(() => null)));
   const [visitors, tx, sources, gsc, alerts, clarity] = await Promise.all([
     prisma.trackSession.groupBy({ by: ["projectId", "date", "visitorId"], where }),
     prisma.transaction.groupBy({ by: ["projectId", "date", "currency"], where: { ...where, amount: { gt: 0 } }, _sum: { amount: true }, _count: { _all: true } }),
@@ -70,7 +126,10 @@ export async function buildDailyReport(today = dayKey(new Date())): Promise<Dail
   const isY = (d: Date) => d.getTime() === days[0].getTime();
   const empty = (): Nums => ({ visitors: 0, orders: 0, revenue: 0, google: null });
   const rows = new Map<string, ReportProject>(
-    projects.map((p) => [p.id, { ...p, y: empty(), w: empty(), revenueRon: 0, revenueRonW: 0, topSource: null, alerts: [], clarity: null }]),
+    projects.map((p) => [
+      p.id,
+      { id: p.id, name: p.name, currency: p.currency, y: empty(), w: empty(), revenueRon: 0, revenueRonW: 0, topSource: null, alerts: [], clarity: null },
+    ]),
   );
 
   for (const v of visitors) {
@@ -178,7 +237,19 @@ export async function buildDailyReport(today = dayKey(new Date())): Promise<Dail
       });
     }
   }
-  const highlights = hs.sort((a, b) => b.score - a.score).slice(0, 3).map((h) => h.text);
+  // Din aplicatii: facturile neemise intra mereu primele in „Ce s-a schimbat”
+  const appResults = await appStatsP;
+  const apps: ReportApp[] = [];
+  const invoiceHs: string[] = [];
+  projects.forEach((p, i) => {
+    const res = appResults[i];
+    if (!res?.ok) return;
+    const app = appForReport(p.name, res.stats, p.currency);
+    apps.push(app);
+    const missing = unissuedCount(res.stats, app.basis);
+    if (missing > 0) invoiceHs.push(`${p.name}: ${missing === 1 ? "1 factură neemisă" : `${deN(missing, "facturi neemise")}`}.`);
+  });
+  const highlights = [...invoiceHs, ...hs.sort((a, b) => b.score - a.score).slice(0, 3).map((h) => h.text)];
 
   const label = (d: string) =>
     `${WEEKDAY[dayDate(d).getUTCDay()]}, ${new Date(`${d}T12:00:00Z`).toLocaleDateString("ro-RO", { day: "numeric", month: "long", timeZone: "UTC" })}`;
@@ -192,6 +263,7 @@ export async function buildDailyReport(today = dayKey(new Date())): Promise<Dail
     total,
     highlights,
     activeAlerts: alerts.length,
+    apps,
   };
 }
 
@@ -203,6 +275,28 @@ function arrow(cur: number, prev: number) {
   const pct = Math.round(((cur - prev) / Math.abs(prev)) * 100);
   const up = cur > prev;
   return `<span style="color:${up ? "#0f7b3f" : "#c0362f"}">${up ? "▲" : "▼"} ${Math.abs(pct)}%</span>`;
+}
+
+// „Din aplicații – ultimele 24 h”: cateva cifre pe aplicatie, facturile neemise cu rosu
+function appsBlock(apps: ReportApp[]): string {
+  if (!apps.length) return "";
+  const row = (a: ReportApp) => {
+    const body = a.kpis
+      .map((k) =>
+        k.bad ? `<span style="color:#c0362f;font-weight:700">⚠ ${esc(k.label)}: ${esc(k.value)}</span>` : `${esc(k.label)}: <b>${esc(k.value)}</b>`,
+      )
+      .join("<br>");
+    return `<tr><td style="padding:8px 0;border-top:1px solid #e4e3de">
+      <div style="font-size:14px;font-weight:700">${esc(a.name)}${a.basis === "azi" ? ` <span style="font-weight:400;font-size:12px;color:#7c7b76">(azi, de la miezul nopții)</span>` : ""}</div>
+      <div style="font-size:14px;line-height:1.6;color:#0b0b0b">${body}</div>
+    </td></tr>`;
+  };
+  const busy = apps.filter((a) => a.kpis.length);
+  const idle = apps.filter((a) => !a.kpis.length);
+  return `<h2 style="font-size:15px;margin:0">Din aplicații – ultimele 24 h</h2>
+  ${busy.length ? `<table role="presentation" style="width:100%;border-collapse:collapse">${busy.map(row).join("")}</table>` : ""}
+  ${idle.length ? `<p style="font-size:13px;color:#7c7b76;margin:6px 0 0">Nimic nou în aplicațiile: ${idle.map((a) => esc(a.name)).join(", ")}.</p>` : ""}
+  <div style="height:14px"></div>`;
 }
 
 // E-mail scurt, pe o coloana (se citeste bine pe telefon)
@@ -252,6 +346,8 @@ export function renderDailyReport(r: DailyReport, siteUrl = "https://mydashboard
       ? `<ol style="margin:0 0 14px;padding-left:20px;font-size:14px;line-height:1.5">${r.highlights.map((h) => `<li style="margin-bottom:4px">${esc(h)}</li>`).join("")}</ol>`
       : `<p style="margin:0 0 14px;font-size:14px;color:#52514e">Nicio schimbare mare față de ${esc(r.compareLabel)}.</p>`
   }
+
+  ${appsBlock(r.apps)}
 
   <h2 style="font-size:15px;margin:0">Pe proiect</h2>
   <table role="presentation" style="width:100%;border-collapse:collapse">${active.map(projectBlock).join("")}</table>

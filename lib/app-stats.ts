@@ -13,6 +13,8 @@ const Kpi = z.object({
   label: z.string().max(80),
   unit: z.enum(["count", "money", "percent"]).catch("count"),
   hint: z.string().max(200).optional(),
+  // ultimele 24 de ore (fereastra mobila); optional, aplicatiile mai vechi trimit doar today/d7/d30/total
+  h24: num,
   today: num,
   d7: num,
   d30: num,

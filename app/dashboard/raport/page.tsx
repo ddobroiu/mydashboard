@@ -14,7 +14,8 @@ export default async function ReportPage() {
       <div>
         <h1 className="text-2xl font-semibold">Raportul de dimineață</h1>
         <p className="mt-1 text-sm text-text-2">
-          Vine pe e-mail în fiecare dimineață la 7:30: ieri față de aceeași zi de săptămâna trecută. Mai jos e exact ce primești azi.
+          Vine pe e-mail în fiecare dimineață la 7:30: ieri față de aceeași zi de săptămâna trecută, plus cifrele din aplicații pe ultimele 24 de ore (conturi, comenzi,
+          încasări, facturi neemise). Mai jos e exact ce primești azi.
         </p>
       </div>
       <SendTestButton />
@@ -22,7 +23,7 @@ export default async function ReportPage() {
         <div className="border-b border-border px-4 py-2 text-sm text-text-2">
           Subiect: <strong className="text-text">{reportSubject(report)}</strong>
         </div>
-        <iframe srcDoc={html} title="Previzualizare raport" className="h-[1100px] w-full bg-white" />
+        <iframe srcDoc={html} title="Previzualizare raport" className="h-[1400px] w-full bg-white" />
       </div>
     </div>
   );
