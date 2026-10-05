@@ -180,10 +180,30 @@ export async function getAiOverview(organizationIds: string[]) {
     const inMonth = l.date >= monthStart;
     const in30 = l.date >= since30;
     const inPrev = l.date >= prevSince && l.date < since30;
-    if (inPrev) totals.prev30[l.provider] += l.costUsd;
+    // Costurile generale (workspace / proiect extern nelegat) nu intra in totaluri, grafic si modele:
+    // pagina arata doar ce cheltuie proiectele din program. Raman listate la „Nelegate”, ca sa poata fi legate.
+    const general = !l.projectId;
+    if (inPrev && !general) totals.prev30[l.provider] += l.costUsd;
     if (!inMonth && !in30) continue;
     const month = inMonth ? l.costUsd : 0;
     const last30 = in30 ? l.costUsd : 0;
+    if (general) {
+      if (l.accountId && l.externalId !== undefined) {
+        const k = `${l.accountId}|${l.externalId}`;
+        const u = unassigned.get(k) ?? {
+          provider: l.provider,
+          accountId: l.accountId,
+          externalId: l.externalId,
+          name: nameOf(l.accountId, l.externalId),
+          month: 0,
+          last30: 0,
+        };
+        u.month += month;
+        u.last30 += last30;
+        unassigned.set(k, u);
+      }
+      continue;
+    }
     totals.month[l.provider] += month;
     totals.last30[l.provider] += last30;
     const day = daily.get(l.date);
@@ -199,27 +219,11 @@ export async function getAiOverview(organizationIds: string[]) {
     }
     perModel.set(mk, m);
 
-    if (l.projectId) {
-      const p = perProject.get(l.projectId) ?? { month: 0, last30: 0, by: zero() };
-      p.month += month;
-      p.last30 += last30;
-      p.by[l.provider] += last30;
-      perProject.set(l.projectId, p);
-    } else if (l.accountId && l.externalId !== undefined) {
-      // Workspace / proiect extern nelegat de niciun proiect: „neatribuit”, ca sa nu se piarda nimic
-      const k = `${l.accountId}|${l.externalId}`;
-      const u = unassigned.get(k) ?? {
-        provider: l.provider,
-        accountId: l.accountId,
-        externalId: l.externalId,
-        name: nameOf(l.accountId, l.externalId),
-        month: 0,
-        last30: 0,
-      };
-      u.month += month;
-      u.last30 += last30;
-      unassigned.set(k, u);
-    }
+    const p = perProject.get(l.projectId!) ?? { month: 0, last30: 0, by: zero() };
+    p.month += month;
+    p.last30 += last30;
+    p.by[l.provider] += last30;
+    perProject.set(l.projectId!, p);
   }
 
   const unassignedTotal = { month: 0, last30: 0 };

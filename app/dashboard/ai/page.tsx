@@ -117,23 +117,6 @@ export default async function AiCostsPage() {
                     <td className="py-2 pl-4 text-right">{usd(p.month)}</td>
                   </tr>
                 ))}
-              {(o.unassignedTotal.last30 !== 0 || o.unassignedTotal.month !== 0) && (
-                <tr className="border-t border-border text-text-2">
-                  <td className="py-2">
-                    Neatribuit <span className="text-xs text-text-3">(workspace-uri / proiecte nelegate, mai jos)</span>
-                  </td>
-                  {PROVIDERS.map((k) => {
-                    const v = o.unassigned.filter((u) => u.provider === k).reduce((s, u) => s + u.last30, 0);
-                    return (
-                      <td key={k} className="py-2 pl-4 text-right">
-                        {v ? usd(v) : "–"}
-                      </td>
-                    );
-                  })}
-                  <td className="py-2 pl-4 text-right font-medium">{usd(o.unassignedTotal.last30)}</td>
-                  <td className="py-2 pl-4 text-right">{usd(o.unassignedTotal.month)}</td>
-                </tr>
-              )}
               <tr className="border-t-2 border-border font-medium">
                 <td className="py-2">Total</td>
                 {PROVIDERS.map((k) => (
@@ -282,10 +265,10 @@ export default async function AiCostsPage() {
 
       {o.unassigned.length > 0 && (
         <section className="space-y-2">
-          <h2 className="text-lg font-semibold">Neatribuit</h2>
+          <h2 className="text-lg font-semibold">Cheltuieli generale (nu intră în totaluri)</h2>
           <p className="text-xs text-text-3">
-            Costuri din workspace-uri Anthropic / proiecte OpenAI care nu sunt legate de niciun proiect. Leagă-le ca să apară la proiectul lor (se
-            aplică și zilelor deja aduse).
+            Costuri din workspace-uri Anthropic / proiecte OpenAI care nu sunt legate de niciun proiect (de ex. folosirea ta personală). Nu se adună
+            nicăieri; dacă una ține de un proiect, leag-o și apare la el (și pentru zilele deja aduse).
           </p>
           <div className="card p-4 overflow-x-auto">
             <table className="w-full min-w-[640px] text-sm tabular">
@@ -417,7 +400,7 @@ export default async function AiCostsPage() {
                 {acc && (
                   <div className="space-y-1 text-sm">
                     <div className="text-text-2">Legături {info.idLabel} → proiect:</div>
-                    {acc.links.length === 0 && <div className="text-xs text-text-3">Niciuna încă. Tot costul apare la „Neatribuit”.</div>}
+                    {acc.links.length === 0 && <div className="text-xs text-text-3">Niciuna încă. Costul nu intră în totaluri până nu legi.</div>}
                     <ul className="space-y-1">
                       {acc.links.map((l) => (
                         <li key={l.id} className="flex items-center gap-2">
@@ -493,7 +476,7 @@ export default async function AiCostsPage() {
         </p>
         <p>
           <b>Anthropic și OpenAI</b>: costul facturat de ei, pe zile UTC. Atribuirea pe proiect se face prin workspace-ul Anthropic (wrkspc_…) sau
-          proiectul OpenAI (proj_…) în care e cheia API a aplicației; ce nu e legat apare la „Neatribuit”.
+          proiectul OpenAI (proj_…) în care e cheia API a aplicației; ce nu e legat nu intră în totaluri.
         </p>
       </section>
     </div>
