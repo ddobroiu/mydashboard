@@ -55,6 +55,28 @@ async function readJson(res: Response, who: string) {
   return body;
 }
 
+// Tokenii fiecarei chei API pe zi + workspace/proiect (+ model), ca sa impartim costul raportat doar pe workspace/proiect
+class KeySplit {
+  private byModel = new Map<string, Map<string, number>>();
+  private byDay = new Map<string, Map<string, number>>();
+  private put(m: Map<string, Map<string, number>>, k: string, id: string, v: number) {
+    const g = m.get(k) ?? new Map<string, number>();
+    g.set(id, (g.get(id) ?? 0) + v);
+    m.set(k, g);
+  }
+  add(date: string, group: string, model: string, id: string, tokens: number) {
+    this.put(this.byModel, `${date}|${group}|${model}`, id, tokens);
+    this.put(this.byDay, `${date}|${group}`, id, tokens);
+  }
+  // [externalId, cost]: pe chei dupa tokeni (la acel model, altfel in acea zi); fara consum pe chei ramane pe grup
+  cost(date: string, group: string, model: string, costUsd: number): [string, number][] {
+    const m = [this.byModel.get(`${date}|${group}|${model}`), this.byDay.get(`${date}|${group}`)].find((x) => x && [...x.values()].some((v) => v > 0));
+    if (!m) return [[group, costUsd]];
+    const total = [...m.values()].reduce((a, v) => a + v, 0);
+    return [...m].filter(([, v]) => v > 0).map(([id, v]) => [id, (costUsd * v) / total]);
+  }
+}
+
 // ─── Anthropic ─────────────────────────────────────────────────────────────
 
 type AnthropicPage<T> = { data: { starting_at: string; ending_at: string; results: T[] }[]; has_more: boolean; next_page: string | null };
@@ -72,6 +94,7 @@ export type AnthropicCostResult = {
 
 export type AnthropicUsageResult = {
   workspace_id: string | null;
+  api_key_id?: string | null;
   model: string | null;
   uncached_input_tokens?: number;
   cache_read_input_tokens?: number;
@@ -102,32 +125,31 @@ async function anthropicReport<T>(c: AiAdminCredentials, path: string, params: [
 }
 
 // Parsarea, separat de cereri, ca sa poata fi verificata pe exemplele din documentatie
+// Ca la OpenAI: costul (raportat pe workspace) se imparte pe cheile API (apikey_...) dupa tokenii lor din ziua si modelul respectiv
 export function parseAnthropic(costPages: AnthropicPage<AnthropicCostResult>[], usagePages: AnthropicPage<AnthropicUsageResult>[]): ApiCostRow[] {
   const rows = new Map<string, ApiCostRow>();
+  const split = new KeySplit();
+  for (const p of usagePages)
+    for (const b of p.data ?? [])
+      for (const r of b.results ?? []) {
+        const date = b.starting_at.slice(0, 10);
+        const ws = r.workspace_id ?? DEFAULT_ID;
+        const model = r.model ?? "altele";
+        const id = r.api_key_id || ws;
+        const cached = num(r.cache_read_input_tokens);
+        const written = num(r.cache_creation?.ephemeral_1h_input_tokens) + num(r.cache_creation?.ephemeral_5m_input_tokens);
+        const input = num(r.uncached_input_tokens) + cached + written;
+        split.add(date, ws, model, id, input + num(r.output_tokens));
+        sumRows(rows, { date, externalId: id, model, inputTokens: input, cachedTokens: cached, outputTokens: num(r.output_tokens) });
+      }
   for (const p of costPages)
     for (const b of p.data ?? [])
       for (const r of b.results ?? []) {
         if (r.currency && r.currency.toUpperCase() !== "USD") continue;
-        sumRows(rows, {
-          date: b.starting_at.slice(0, 10),
-          externalId: r.workspace_id ?? DEFAULT_ID,
-          model: r.model ?? r.description ?? "altele",
-          costUsd: num(r.amount) / 100,
-        });
-      }
-  for (const p of usagePages)
-    for (const b of p.data ?? [])
-      for (const r of b.results ?? []) {
-        const cached = num(r.cache_read_input_tokens);
-        const written = num(r.cache_creation?.ephemeral_1h_input_tokens) + num(r.cache_creation?.ephemeral_5m_input_tokens);
-        sumRows(rows, {
-          date: b.starting_at.slice(0, 10),
-          externalId: r.workspace_id ?? DEFAULT_ID,
-          model: r.model ?? "altele",
-          inputTokens: num(r.uncached_input_tokens) + cached + written,
-          cachedTokens: cached,
-          outputTokens: num(r.output_tokens),
-        });
+        const date = b.starting_at.slice(0, 10);
+        const model = r.model ?? r.description ?? "altele";
+        for (const [externalId, costUsd] of split.cost(date, r.workspace_id ?? DEFAULT_ID, model, num(r.amount) / 100))
+          sumRows(rows, { date, externalId, model, costUsd });
       }
   return [...rows.values()];
 }
@@ -149,6 +171,7 @@ export async function fetchAnthropicCosts(c: AiAdminCredentials, since: string, 
   const usage = await anthropicReport<AnthropicUsageResult>(c, "/v1/organizations/usage_report/messages", [
     ...range,
     ["group_by[]", "workspace_id"],
+    ["group_by[]", "api_key_id"],
     ["group_by[]", "model"],
   ]);
   return parseAnthropic(cost, usage);
@@ -170,6 +193,20 @@ export async function anthropicWorkspaces(c: AiAdminCredentials): Promise<Record
     if (!body.has_more || !body.last_id) break;
     after = body.last_id;
   }
+  // Numele cheilor API (apikey_... -> „shopprint”), pentru legarea automata de proiecte
+  after = null;
+  for (let i = 0; i < 20; i++) {
+    const params: [string, string][] = [["limit", "1000"]];
+    if (after) params.push(["after_id", after]);
+    const body: { data?: { id: string; name: string | null }[]; has_more?: boolean; last_id?: string | null } = await anthropicGet(
+      c,
+      "/v1/organizations/api_keys",
+      params,
+    ).catch(() => ({}));
+    for (const k of body.data ?? []) names[k.id] = k.name || k.id;
+    if (!body.has_more || !body.last_id) break;
+    after = body.last_id;
+  }
   return names;
 }
 
@@ -186,6 +223,7 @@ export type OpenAICostResult = {
 
 export type OpenAIUsageResult = {
   project_id: string | null;
+  api_key_id?: string | null;
   model: string | null;
   input_tokens?: number;
   output_tokens?: number;
@@ -219,31 +257,38 @@ export const openaiItemModel = (lineItem: string | null) => (lineItem ? lineItem
 
 const utcDay = (unix: number) => new Date(unix * 1000).toISOString().slice(0, 10);
 
+// Toate aplicatiile pot sta in acelasi proiect OpenAI, fiecare cu cheia ei: costul (raportat doar pe proiect) se imparte
+// pe cheile API (key_...) dupa tokenii fiecareia din acea zi, la acel model; fara consum pe chei ramane pe proiect.
 export function parseOpenAI(costPages: OpenAIPage<OpenAICostResult>[], usagePages: OpenAIPage<OpenAIUsageResult>[]): ApiCostRow[] {
   const rows = new Map<string, ApiCostRow>();
-  for (const p of costPages)
-    for (const b of p.data ?? [])
-      for (const r of b.results ?? []) {
-        if (r.amount?.currency && r.amount.currency.toLowerCase() !== "usd") continue;
-        sumRows(rows, {
-          date: utcDay(b.start_time),
-          externalId: r.project_id ?? DEFAULT_ID,
-          model: openaiItemModel(r.line_item),
-          costUsd: num(r.amount?.value),
-        });
-      }
+  const split = new KeySplit();
   for (const p of usagePages)
     for (const b of p.data ?? [])
-      for (const r of b.results ?? [])
+      for (const r of b.results ?? []) {
+        const date = utcDay(b.start_time);
+        const project = r.project_id ?? DEFAULT_ID;
+        const model = r.model ?? "altele";
+        const id = r.api_key_id || project;
+        split.add(date, project, model, id, num(r.input_tokens) + num(r.output_tokens));
         sumRows(rows, {
-          date: utcDay(b.start_time),
-          externalId: r.project_id ?? DEFAULT_ID,
-          model: r.model ?? "altele",
+          date,
+          externalId: id,
+          model,
           inputTokens: num(r.input_tokens),
           cachedTokens: num(r.input_cached_tokens),
           outputTokens: num(r.output_tokens),
           requests: num(r.num_model_requests),
         });
+      }
+  for (const p of costPages)
+    for (const b of p.data ?? [])
+      for (const r of b.results ?? []) {
+        if (r.amount?.currency && r.amount.currency.toLowerCase() !== "usd") continue;
+        const date = utcDay(b.start_time);
+        const model = openaiItemModel(r.line_item);
+        for (const [externalId, costUsd] of split.cost(date, r.project_id ?? DEFAULT_ID, model, num(r.amount?.value)))
+          sumRows(rows, { date, externalId, model, costUsd });
+      }
   return [...rows.values()];
 }
 
@@ -263,16 +308,22 @@ export async function fetchOpenAICosts(c: AiAdminCredentials, since: string, unt
     ["group_by", "project_id"],
     ["group_by", "line_item"],
   ]);
-  const usage = await openaiReport<OpenAIUsageResult>(c, "/v1/organization/usage/completions", [
-    ...range,
-    ["limit", "31"],
-    ["group_by", "project_id"],
-    ["group_by", "model"],
-  ]);
+  const usage: OpenAIPage<OpenAIUsageResult>[] = [];
+  for (const kind of ["completions", "embeddings"])
+    usage.push(
+      ...(await openaiReport<OpenAIUsageResult>(c, `/v1/organization/usage/${kind}`, [
+        ...range,
+        ["limit", "31"],
+        ["group_by", "project_id"],
+        ["group_by", "api_key_id"],
+        ["group_by", "model"],
+      ])),
+    );
   return parseOpenAI(cost, usage);
 }
 
-// Verifica cheia (doar o cheie Admin poate lista proiectele) si aduce numele lor
+// Verifica cheia (doar o cheie Admin poate lista proiectele) si aduce numele lor, plus numele cheilor API din fiecare
+// (key_... -> „shopprint”), dupa care cheile se leaga singure de proiectul cu acelasi nume
 export async function openaiProjects(c: AiAdminCredentials): Promise<Record<string, string>> {
   const names: Record<string, string> = {};
   let after: string | null = null;
@@ -287,6 +338,12 @@ export async function openaiProjects(c: AiAdminCredentials): Promise<Record<stri
     for (const p of body.data ?? []) names[p.id] = p.name;
     if (!body.has_more || !body.last_id) break;
     after = body.last_id;
+  }
+  for (const projectId of Object.keys(names).filter((id) => id.startsWith("proj_"))) {
+    const keys: { data?: { id: string; name: string | null }[] } = await openaiGet(c, `/v1/organization/projects/${projectId}/api_keys`, [["limit", "100"]]).catch(
+      () => ({}),
+    );
+    for (const k of keys.data ?? []) names[k.id] = k.name || k.id;
   }
   return names;
 }

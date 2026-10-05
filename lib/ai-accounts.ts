@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { decryptJson } from "@/lib/crypto";
 import { TZ, dayDate, dayKey, lastNDays } from "@/lib/dates";
 import { raiseAlert, resolveAlert } from "@/lib/alerts";
+import { matchProject } from "@/lib/ai-usage";
 import { AI_ADMIN, isAiAdminProvider, type AiAdminCredentials, type ApiCostRow } from "@/lib/integrations/ai-admin";
 
 // Conturile de organizatie Anthropic / OpenAI: citite o singura data pe zi (costul zilei de ieri e final
@@ -38,6 +39,23 @@ async function replaceCosts(acc: AiAccount, since: string, until: string, rows: 
   ]);
 }
 
+// Cheile API (OpenAI key_..., Anthropic apikey_...) numite ca aplicatia („shopprint”, „eweb”) se leaga singure de proiectul cu acelasi nume / domeniu.
+// Legaturile puse de mana raman cum sunt; cheile fara proiect potrivit raman la „Cheltuieli generale”.
+async function autoLinkKeys(acc: AiAccount, names: Record<string, string>) {
+  const keyIds = Object.keys(names).filter((id) => id.startsWith("key_") || id.startsWith("apikey_"));
+  if (!keyIds.length) return;
+  const [projects, existing] = await Promise.all([
+    prisma.project.findMany({ where: { organizationId: acc.organizationId }, select: { id: true, name: true, domain: true } }),
+    prisma.aiProjectLink.findMany({ where: { accountId: acc.id }, select: { externalId: true } }),
+  ]);
+  const linked = new Set(existing.map((l) => l.externalId));
+  for (const id of keyIds) {
+    if (linked.has(id)) continue;
+    const p = matchProject(names[id], projects);
+    if (p) await prisma.aiProjectLink.create({ data: { accountId: acc.id, externalId: id, projectId: p.id } }).catch(() => {});
+  }
+}
+
 export async function syncAiAccount(accountId: string, days = AI_SYNC_DAYS) {
   const acc = await prisma.aiAccount.findUniqueOrThrow({ where: { id: accountId } });
   if (!isAiAdminProvider(acc.provider)) throw new Error(`Furnizor AI necunoscut: ${acc.provider}`);
@@ -51,6 +69,7 @@ export async function syncAiAccount(accountId: string, days = AI_SYNC_DAYS) {
     const names = await info.names(creds).catch(() => null);
     const rows = await info.fetch(creds, since, until);
     await replaceCosts(acc, since, until, rows);
+    if (names) await autoLinkKeys(acc, names).catch(() => {});
     await prisma.aiAccount.update({
       where: { id: acc.id },
       data: { status: "ACTIVE", lastSyncAt: new Date(), lastError: null, ...(names && { names }) },
