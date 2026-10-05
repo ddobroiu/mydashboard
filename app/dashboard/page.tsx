@@ -2,9 +2,8 @@ import Link from "next/link";
 import { AlertTriangle, ArrowRight, CheckCircle2, Mail, Wallet } from "lucide-react";
 import { projectsForUser, requireUser } from "@/lib/access";
 import { prisma } from "@/lib/prisma";
-import { formatMoneyFine } from "@/lib/metrics";
+import { addAmount, approxRon, formatAmounts, formatMoneyFine, type Amounts } from "@/lib/metrics";
 import { addDays, dayDate, dayKey } from "@/lib/dates";
-import { convert, getRates } from "@/lib/fx";
 import { getMoney } from "@/lib/money";
 import { gscClicksByProject } from "@/lib/gsc-report";
 import { Stat, Trend, nf } from "@/components/Stat";
@@ -46,8 +45,7 @@ export default async function Overview() {
   const { cur, prev } = money;
   const gscEnd = addDays(today, -1);
 
-  const [rates, todayTx, yTx, visToday, visYesterday, visMonth, visPrevMonth, gsc, gscPrev, alerts] = await Promise.all([
-    getRates(),
+  const [todayTx, yTx, visToday, visYesterday, visMonth, visPrevMonth, gsc, gscPrev, alerts] = await Promise.all([
     prisma.transaction.groupBy({ by: ["currency"], where: { projectId: { in: ids }, date: dayDate(today) }, _sum: { amount: true } }),
     prisma.transaction.groupBy({ by: ["currency"], where: { projectId: { in: ids }, date: dayDate(yesterday) }, _sum: { amount: true } }),
     visitorsByProject(ids, today, today),
@@ -58,12 +56,12 @@ export default async function Overview() {
     gscClicksByProject(ids, addDays(gscEnd, -55), addDays(gscEnd, -28)),
     prisma.alertState.findMany({ where: { active: true }, select: { project: true } }),
   ]);
-  const toRon = (rows: { currency: string; _sum: { amount: unknown } }[]) =>
-    rows.reduce((s, r) => s + convert(rates, Number(r._sum.amount ?? 0), r.currency, "RON"), 0);
-  const salesToday = toRon(todayTx);
-  const salesYesterday = toRon(yTx);
+  // pe moneda: vanzarile in euro raman in euro, cele in lei in lei
+  const byCur = (rows: { currency: string; _sum: { amount: unknown } }[]) =>
+    rows.reduce((a, r) => addAmount(a, r.currency, Number(r._sum.amount ?? 0)), {} as Amounts);
+  const salesToday = byCur(todayTx);
+  const salesYesterday = byCur(yTx);
   const sumMap = (m: Map<string, number>) => [...m.values()].reduce((a, b) => a + b, 0);
-  const lei = (v: number) => formatMoneyFine(v, "RON");
 
   const alertsBy = new Map<string, number>();
   for (const a of alerts) {
@@ -87,7 +85,7 @@ export default async function Overview() {
       <div>
         <h1 className="text-2xl font-semibold">Cum stai</h1>
         <p className="text-sm text-text-2">
-          {new Date().toLocaleDateString("ro-RO", { weekday: "long", day: "numeric", month: "long", timeZone: "Europe/Bucharest" })} · toate proiectele, sume în lei
+          {new Date().toLocaleDateString("ro-RO", { weekday: "long", day: "numeric", month: "long", timeZone: "Europe/Bucharest" })} · toate proiectele, fiecare sumă în moneda ei
         </p>
       </div>
 
@@ -111,7 +109,7 @@ export default async function Overview() {
       <section className="space-y-2">
         <h2 className="text-sm font-medium uppercase tracking-wide text-text-3">Azi, până acum</h2>
         <div className="grid grid-cols-2 gap-3">
-          <Stat label="Vânzări azi" value={lei(salesToday)} sub={`ieri: ${lei(salesYesterday)}`} />
+          <Stat label="Vânzări azi" value={formatAmounts(salesToday)} sub={`ieri: ${formatAmounts(salesYesterday)}`} />
           <Stat label="Vizitatori azi" value={nf(sumMap(visToday))} sub={`ieri: ${nf(sumMap(visYesterday))}`} />
         </div>
       </section>
@@ -122,9 +120,16 @@ export default async function Overview() {
           <span className="text-xs text-text-3">față de {prev.label}</span>
         </div>
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          <Stat label="Vânzări" value={lei(t.revenue)} cur={t.revenue} prev={pt.revenue} sub={`${t.orders} plăți`} />
-          <Stat label="Costuri" value={lei(t.costs)} cur={t.costs} prev={pt.costs} lowerIsBetter />
-          <Stat label={t.profit >= 0 ? "Profit" : "Pierdere"} value={lei(t.profit)} tone={t.profit >= 0 ? "good" : "bad"} cur={t.profit} prev={pt.profit} />
+          <Stat label="Vânzări" value={formatAmounts(t.by.revenue)} cur={t.revenue} prev={pt.revenue} sub={[`${t.orders} plăți`, approxRon(t.by.revenue, t.revenue)].filter(Boolean).join(" · ")} />
+          <Stat label="Costuri" value={formatAmounts(t.by.costs)} cur={t.costs} prev={pt.costs} lowerIsBetter sub={approxRon(t.by.costs, t.costs)} />
+          <Stat
+            label={t.profit >= 0 ? "Profit" : "Pierdere"}
+            value={formatAmounts(t.by.profit)}
+            tone={t.profit >= 0 ? "good" : "bad"}
+            cur={t.profit}
+            prev={pt.profit}
+            sub={approxRon(t.by.profit, t.profit)}
+          />
           <Stat label="Vizitatori" value={nf(sumMap(visMonth))} cur={sumMap(visMonth)} prev={sumMap(visPrevMonth)} />
         </div>
         <div className="flex flex-wrap gap-2 pt-1">

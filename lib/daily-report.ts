@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { addDays, dayDate, dayKey } from "@/lib/dates";
 import { convert, getRates } from "@/lib/fx";
-import { formatMoney } from "@/lib/metrics";
+import { addAmount, currencyCount, formatAmounts, formatMoney, type Amounts } from "@/lib/metrics";
 import { channelOf, simpleChannelOf } from "@/lib/tracking/sources";
 import { clarityForReport } from "@/lib/clarity";
 import { getAppStats, type AppStats } from "@/lib/app-stats";
@@ -38,7 +38,19 @@ export type DailyReport = {
   dayLabel: string;
   compareLabel: string;
   projects: ReportProject[];
-  total: { visitors: number; visitorsW: number; orders: number; ordersW: number; revenueRon: number; revenueRonW: number; google: number; googleW: number | null };
+  // vanzarile pe moneda lor (revenue, revenueW); in lei doar pentru procent si ordine
+  total: {
+    visitors: number;
+    visitorsW: number;
+    orders: number;
+    ordersW: number;
+    revenue: Amounts;
+    revenueW: Amounts;
+    revenueRon: number;
+    revenueRonW: number;
+    google: number;
+    googleW: number | null;
+  };
   highlights: string[];
   activeAlerts: number;
   apps: ReportApp[];
@@ -140,6 +152,8 @@ export async function buildDailyReport(today = dayKey(new Date())): Promise<Dail
     ...tx.map((t) => ({ ...t, count: t._count._all })),
     ...refunds.map((t) => ({ ...t, count: 0 })),
   ];
+  const revenueBy: Amounts = {};
+  const revenueByW: Amounts = {};
   for (const t of money) {
     const r = rows.get(t.projectId)!;
     const amount = Number(t._sum.amount ?? 0);
@@ -148,6 +162,7 @@ export async function buildDailyReport(today = dayKey(new Date())): Promise<Dail
     nums.orders += t.count;
     if (isY(t.date)) r.revenueRon += convert(rates, amount, t.currency, "RON");
     else r.revenueRonW += convert(rates, amount, t.currency, "RON");
+    addAmount(isY(t.date) ? revenueBy : revenueByW, t.currency, amount);
   }
   for (const g of gsc) {
     const r = rows.get(g.projectId)!;
@@ -181,6 +196,8 @@ export async function buildDailyReport(today = dayKey(new Date())): Promise<Dail
     visitorsW: sum((r) => r.w.visitors),
     orders: sum((r) => r.y.orders),
     ordersW: sum((r) => r.w.orders),
+    revenue: revenueBy,
+    revenueW: revenueByW,
     revenueRon: sum((r) => r.revenueRon),
     revenueRonW: sum((r) => r.revenueRonW),
     google: sum((r) => r.y.google ?? 0),
@@ -302,9 +319,13 @@ function appsBlock(apps: ReportApp[]): string {
 // E-mail scurt, pe o coloana (se citeste bine pe telefon)
 export function renderDailyReport(r: DailyReport, siteUrl = "https://mydashboard.ro"): string {
   const t = r.total;
-  const lei = (v: number) => formatMoney(v, "RON");
-  const big = (label: string, value: string, a: string) =>
-    `<td style="padding:8px 6px;vertical-align:top;width:33%"><div style="font-size:12px;color:#52514e">${label}</div><div style="font-size:22px;font-weight:700;color:#0b0b0b">${value}</div><div style="font-size:12px">${a}</div></td>`;
+  const big = (label: string, value: string, a: string, size = 22) =>
+    `<td style="padding:8px 6px;vertical-align:top;width:33%"><div style="font-size:12px;color:#52514e">${label}</div><div style="font-size:${size}px;font-weight:700;color:#0b0b0b">${value}</div><div style="font-size:12px">${a}</div></td>`;
+  // fiecare moneda pe randul ei (lei, apoi euro), ca sa incapa pe telefon
+  const sales = formatAmounts(t.revenue, false)
+    .split(/ (?=[+−] )/)
+    .map(esc)
+    .join("<br>");
 
   const active = r.projects.filter((p) => p.y.visitors || p.w.visitors || p.y.orders || p.w.orders || p.y.google || p.alerts.length);
   const quiet = r.projects.filter((p) => !active.includes(p));
@@ -336,9 +357,9 @@ export function renderDailyReport(r: DailyReport, siteUrl = "https://mydashboard
   <div style="font-size:13px;color:#52514e;margin-bottom:12px">Comparat cu ${esc(r.compareLabel)}</div>
 
   <table role="presentation" style="width:100%;border-collapse:collapse;background:#fcfcfb;border:1px solid #e4e3de;border-radius:10px">
-    <tr>${big("Vânzări", esc(lei(t.revenueRon)), arrow(t.revenueRon, t.revenueRonW))}${big("Vizitatori", n(t.visitors), arrow(t.visitors, t.visitorsW))}${big("Clicuri Google", n(t.google), t.googleW === null ? "" : arrow(t.google, t.googleW))}</tr>
+    <tr>${big("Vânzări", sales, arrow(t.revenueRon, t.revenueRonW), currencyCount(t.revenue) > 1 ? 17 : 22)}${big("Vizitatori", n(t.visitors), arrow(t.visitors, t.visitorsW))}${big("Clicuri Google", n(t.google), t.googleW === null ? "" : arrow(t.google, t.googleW))}</tr>
   </table>
-  <div style="font-size:12px;color:#7c7b76;margin:4px 0 14px">${deN(t.orders, t.orders === 1 ? "plată" : "plăți")} · toate proiectele, în lei${r.activeAlerts ? ` · <a href="${siteUrl}/dashboard/alerte" style="color:#c0362f">${r.activeAlerts === 1 ? "1 alertă activă" : `${r.activeAlerts} alerte active`}</a>` : ""}</div>
+  <div style="font-size:12px;color:#7c7b76;margin:4px 0 14px">${deN(t.orders, t.orders === 1 ? "plată" : "plăți")} · toate proiectele, fiecare sumă în moneda ei${r.activeAlerts ? ` · <a href="${siteUrl}/dashboard/alerte" style="color:#c0362f">${r.activeAlerts === 1 ? "1 alertă activă" : `${r.activeAlerts} alerte active`}</a>` : ""}</div>
 
   <h2 style="font-size:15px;margin:0 0 6px">Ce s-a schimbat</h2>
   ${
@@ -360,5 +381,5 @@ export function renderDailyReport(r: DailyReport, siteUrl = "https://mydashboard
 
 export function reportSubject(r: DailyReport) {
   const t = r.total;
-  return `Ieri: ${formatMoney(t.revenueRon, "RON")} din ${deN(t.orders, t.orders === 1 ? "vânzare" : "vânzări")}, ${deN(t.visitors, t.visitors === 1 ? "vizitator" : "vizitatori")}`;
+  return `Ieri: ${formatAmounts(t.revenue, false)} din ${deN(t.orders, t.orders === 1 ? "vânzare" : "vânzări")}, ${deN(t.visitors, t.visitors === 1 ? "vizitator" : "vizitatori")}`;
 }

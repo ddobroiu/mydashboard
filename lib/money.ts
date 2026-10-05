@@ -3,9 +3,11 @@ import { addDays, dayDate, dayKey } from "@/lib/dates";
 import { convert, getRates, type Rates } from "@/lib/fx";
 import { apiAiUsdByProject } from "@/lib/ai-api-costs";
 import { reportedUsdByProject } from "@/lib/ai-usage";
+import { addAmount, negAmounts, scaleAmounts, sumAmounts, type Amounts } from "@/lib/metrics";
 
 // Banii pe proiect: vanzari (Stripe si celelalte incasari, minus rambursari) minus costuri
-// (comision Stripe, AI, reclame, costuri fixe). Totul se calculeaza in lei si se arata in moneda proiectului.
+// (comision Stripe, AI, reclame, costuri fixe). Totul se calculeaza in lei si se arata in moneda proiectului;
+// in paralel, fiecare suma e tinuta si in moneda ei (by), pentru totalurile care amesteca monede.
 
 export type MoneyView = "luna" | "luna-trecuta";
 export const parseMoneyView = (v: string | undefined): MoneyView => (v === "luna-trecuta" ? "luna-trecuta" : "luna");
@@ -50,7 +52,11 @@ export type MoneyLine = {
   fixed: number;
   costs: number;
   profit: number;
+  // aceleasi sume in moneda lor, neconvertite (vanzari in EUR raman EUR, reclame in RON raman RON, AI in USD)
+  by: Record<MoneyKey, Amounts>;
 };
+
+export type MoneyKey = "revenue" | "stripeFees" | "ai" | "ads" | "fixed" | "costs" | "profit";
 
 export type FixedCostItem = { id: string; name: string; monthly: number; currency: string; toVerify: boolean; shared: boolean; share: number };
 
@@ -72,7 +78,8 @@ export type ProjectMoney = {
 const FEE_PCT = 0.015;
 const FEE_FIXED_EUR = 0.25;
 
-const emptyLine = (): MoneyLine => ({ revenue: 0, orders: 0, stripeFees: 0, feesEstimated: false, ai: 0, ads: 0, fixed: 0, costs: 0, profit: 0 });
+const emptyBy = (): Record<MoneyKey, Amounts> => ({ revenue: {}, stripeFees: {}, ai: {}, ads: {}, fixed: {}, costs: {}, profit: {} });
+const emptyLine = (): MoneyLine => ({ revenue: 0, orders: 0, stripeFees: 0, feesEstimated: false, ai: 0, ads: 0, fixed: 0, costs: 0, profit: 0, by: emptyBy() });
 
 const scale = (l: MoneyLine, f: number): MoneyLine => ({
   ...l,
@@ -87,7 +94,7 @@ const scale = (l: MoneyLine, f: number): MoneyLine => ({
 
 type P = { id: string; name: string; currency: string; organizationId: string };
 
-async function linesFor(projects: P[], period: Period, rates: Rates, fixedMonthlyRon: Map<string, number>) {
+async function linesFor(projects: P[], period: Period, rates: Rates, fixedMonthlyRon: Map<string, number>, fixedMonthlyBy: Map<string, Amounts>) {
   const ids = projects.map((p) => p.id);
   const where = { projectId: { in: ids }, date: { gte: dayDate(period.since), lte: dayDate(period.until) } };
   const [tx, noFee, ai, ads, apiAi, reportedAi] = await Promise.all([
@@ -113,21 +120,37 @@ async function linesFor(projects: P[], period: Period, rates: Rates, fixedMonthl
     const l = lines.get(r.projectId)!;
     l.revenue += ron(r._sum.amount, r.currency);
     l.stripeFees += ron(r._sum.fee, r.currency);
+    addAmount(l.by.revenue, r.currency, Number(r._sum.amount ?? 0));
+    addAmount(l.by.stripeFees, r.currency, Number(r._sum.fee ?? 0));
   }
   for (const r of noFee) {
     const l = lines.get(r.projectId)!;
     l.stripeFees += ron(Number(r._sum.amount ?? 0) * FEE_PCT, r.currency) + convert(rates, FEE_FIXED_EUR * r._count._all, "EUR", "RON");
     l.feesEstimated = true;
+    addAmount(l.by.stripeFees, r.currency, Number(r._sum.amount ?? 0) * FEE_PCT);
+    addAmount(l.by.stripeFees, "EUR", FEE_FIXED_EUR * r._count._all);
   }
   for (const r of orders) lines.get(r.projectId)!.orders = r._count._all;
-  for (const r of ai) lines.get(r.projectId)!.ai += ron(r._sum.costUsd, "USD");
-  for (const [pid, usd] of apiAi) lines.get(pid)!.ai += ron(usd, "USD");
-  for (const [pid, usd] of reportedAi) lines.get(pid)!.ai += ron(usd, "USD");
-  for (const r of ads) lines.get(r.projectId)!.ads += ron(r._sum.spend, r.currency);
+  const addAi = (pid: string, usd: unknown) => {
+    const l = lines.get(pid)!;
+    l.ai += ron(usd, "USD");
+    addAmount(l.by.ai, "USD", Number(usd ?? 0));
+  };
+  for (const r of ai) addAi(r.projectId, r._sum.costUsd);
+  for (const [pid, usd] of apiAi) addAi(pid, usd);
+  for (const [pid, usd] of reportedAi) addAi(pid, usd);
+  for (const r of ads) {
+    const l = lines.get(r.projectId)!;
+    l.ads += ron(r._sum.spend, r.currency);
+    addAmount(l.by.ads, r.currency, Number(r._sum.spend ?? 0));
+  }
   for (const [id, l] of lines) {
     l.fixed = (fixedMonthlyRon.get(id) ?? 0) * period.fixedShare;
     l.costs = l.stripeFees + l.ai + l.ads + l.fixed;
     l.profit = l.revenue - l.costs;
+    l.by.fixed = scaleAmounts(fixedMonthlyBy.get(id) ?? {}, period.fixedShare);
+    l.by.costs = sumAmounts(l.by.stripeFees, l.by.ai, l.by.ads, l.by.fixed);
+    l.by.profit = sumAmounts(l.by.revenue, negAmounts(l.by.costs));
   }
   return lines;
 }
@@ -145,6 +168,7 @@ export async function getMoney(projects: P[], view: MoneyView) {
   // Costurile fixe lunare ale fiecarui proiect: ale lui + partea egala din cele comune
   const items = new Map<string, FixedCostItem[]>();
   const monthlyRon = new Map<string, number>();
+  const monthlyBy = new Map<string, Amounts>();
   for (const p of projects) {
     const n = perOrg.get(p.organizationId) ?? 1;
     const list = fixed
@@ -160,9 +184,10 @@ export async function getMoney(projects: P[], view: MoneyView) {
       }));
     items.set(p.id, list);
     monthlyRon.set(p.id, list.reduce((s, f) => s + convert(rates, f.share, f.currency, "RON"), 0));
+    monthlyBy.set(p.id, list.reduce((a, f) => addAmount(a, f.currency, f.share), {} as Amounts));
   }
 
-  const [curL, prevL] = await Promise.all([linesFor(projects, cur, rates, monthlyRon), linesFor(projects, prev, rates, monthlyRon)]);
+  const [curL, prevL] = await Promise.all([linesFor(projects, cur, rates, monthlyRon, monthlyBy), linesFor(projects, prev, rates, monthlyRon, monthlyBy)]);
   const rows: ProjectMoney[] = projects.map((p) => {
     const f = convert(rates, 1, "RON", p.currency);
     const c = curL.get(p.id)!;
@@ -184,6 +209,7 @@ export async function getMoney(projects: P[], view: MoneyView) {
       t.fixed += l.fixed;
       t.costs += l.costs;
       t.profit += l.profit;
+      for (const k of Object.keys(t.by) as MoneyKey[]) t.by[k] = sumAmounts(t.by[k], l.by[k]);
     }
     return t;
   };

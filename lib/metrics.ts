@@ -92,3 +92,43 @@ export function formatMoneyFine(v: number, currency = "RON") {
   if (Math.abs(v) >= 100 || v === 0) return formatMoney(v, currency);
   return new Intl.NumberFormat("ro-RO", { style: "currency", currency, minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v);
 }
+
+// Sume tinute pe moneda lor, fara conversie: { RON: 1250, EUR: 29 }
+export type Amounts = Record<string, number>;
+
+export function addAmount(a: Amounts, currency: string, v: number) {
+  if (v) a[currency] = (a[currency] ?? 0) + v;
+  return a;
+}
+
+export function sumAmounts(...list: Amounts[]): Amounts {
+  const t: Amounts = {};
+  for (const a of list) for (const [c, v] of Object.entries(a)) addAmount(t, c, v);
+  return t;
+}
+
+export const negAmounts = (a: Amounts): Amounts => Object.fromEntries(Object.entries(a).map(([c, v]) => [c, -v]));
+export const scaleAmounts = (a: Amounts, f: number): Amounts => Object.fromEntries(Object.entries(a).map(([c, v]) => [c, v * f]));
+
+// Lei primii, apoi euro, apoi dolari, apoi restul
+const CUR_ORDER = ["RON", "EUR", "USD"];
+const curRank = (c: string) => (CUR_ORDER.includes(c) ? CUR_ORDER.indexOf(c) : CUR_ORDER.length);
+
+// „1.250 RON + 29 EUR − 4 USD”: fiecare suma in moneda ei, nimic convertit
+export function formatAmounts(a: Amounts, fine = true) {
+  const fmt = fine ? formatMoneyFine : formatMoney;
+  const parts = Object.entries(a)
+    .filter(([, v]) => Math.abs(v) >= 0.005)
+    .sort(([x], [y]) => curRank(x) - curRank(y) || x.localeCompare(y));
+  if (parts.length === 0) return fmt(0, "RON");
+  return parts.map(([c, v], i) => (i === 0 ? fmt(v, c) : `${v < 0 ? "−" : "+"} ${fmt(Math.abs(v), c)}`)).join(" ");
+}
+
+// Cate monede are suma (ca sa stim cand merita aratat si echivalentul in lei)
+export const currencyCount = (a: Amounts) => Object.values(a).filter((v) => Math.abs(v) >= 0.005).length;
+
+// „≈ 1.395 RON”, mic, langa o suma pe mai multe monede; nimic cand suma e deja numai in lei
+export function approxRon(a: Amounts, ron: number) {
+  const n = currencyCount(a);
+  return n > 1 || (n === 1 && !a.RON) ? `≈ ${formatMoneyFine(ron, "RON")}` : undefined;
+}
