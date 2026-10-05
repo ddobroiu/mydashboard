@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Lightbulb, Search, FileText, Sparkles } from "lucide-react";
+import { Lightbulb, Search, FileText } from "lucide-react";
 import { opportunitySentence, roCount, type GoogleReport, type GscRow } from "@/lib/gsc-report";
 import { ClicksChart } from "./ClicksChart";
 import { Stat, Trend, nf } from "./Stat";
@@ -169,7 +169,7 @@ export function GoogleSection({ g, basePath }: { g: GoogleReport; basePath: stri
         </div>
         <div className="card p-4">
           <h3 className="mb-1 flex items-center gap-2 font-medium">
-            <Sparkles size={16} className="text-good" /> Căutări noi și în creștere
+             Căutări noi și în creștere
           </h3>
           <p className="mb-3 text-xs text-text-3">Față de cele 28 de zile dinainte</p>
           {g.rising.length === 0 && g.newQueries.length === 0 ? (
