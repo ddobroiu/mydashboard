@@ -2,6 +2,7 @@ import Link from "next/link";
 import { AlertTriangle, ArrowRight, CheckCircle2, Mail, Wallet } from "lucide-react";
 import { projectsForUser, requireUser } from "@/lib/access";
 import { prisma } from "@/lib/prisma";
+import { NOT_LOCAL_ALERT } from "@/lib/alert-explain";
 import { addAmount, approxRon, formatAmounts, formatMoneyFine, type Amounts } from "@/lib/metrics";
 import { addDays, dayDate, dayKey } from "@/lib/dates";
 import { getMoney } from "@/lib/money";
@@ -54,7 +55,7 @@ export default async function Overview() {
     visitorsByProject(ids, prev.since, prev.until),
     gscClicksByProject(ids, addDays(gscEnd, -27), gscEnd),
     gscClicksByProject(ids, addDays(gscEnd, -55), addDays(gscEnd, -28)),
-    prisma.alertState.findMany({ where: { active: true }, select: { project: true } }),
+    prisma.alertState.findMany({ where: { active: true, ...NOT_LOCAL_ALERT }, select: { project: true } }),
   ]);
   // pe moneda: vanzarile in euro raman in euro, cele in lei in lei
   const byCur = (rows: { currency: string; _sum: { amount: unknown } }[]) =>

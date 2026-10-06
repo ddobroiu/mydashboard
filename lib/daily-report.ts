@@ -5,6 +5,7 @@ import { addAmount, currencyCount, formatAmounts, formatMoney, type Amounts } fr
 import { channelOf, simpleChannelOf } from "@/lib/tracking/sources";
 import { clarityForReport } from "@/lib/clarity";
 import { getAppStats, type AppStats } from "@/lib/app-stats";
+import { alertSubject, explainAlert, isLocalDevAlert } from "@/lib/alert-explain";
 
 // Raportul de dimineata: ieri fata de aceeasi zi de saptamana trecuta, pe proiect si total.
 
@@ -129,7 +130,7 @@ export async function buildDailyReport(today = dayKey(new Date())): Promise<Dail
     prisma.transaction.groupBy({ by: ["projectId", "date", "currency"], where: { ...where, amount: { gt: 0 } }, _sum: { amount: true }, _count: { _all: true } }),
     prisma.trackSession.groupBy({ by: ["projectId", "source", "medium", "clickType"], where: { projectId: { in: ids }, date: dayDate(day) }, _count: { _all: true } }),
     prisma.gscDaily.findMany({ where, select: { projectId: true, date: true, clicks: true } }),
-    prisma.alertState.findMany({ where: { active: true }, select: { project: true, message: true, kind: true } }),
+    prisma.alertState.findMany({ where: { active: true }, select: { project: true, message: true, kind: true, explanation: true } }),
     clarityForReport(ids, day),
   ]);
   // Rambursarile (sume negative) scad din vanzari
@@ -184,7 +185,9 @@ export async function buildDailyReport(today = dayKey(new Date())): Promise<Dail
   const byName = new Map(projects.map((p) => [p.name.toLowerCase(), p.id]));
   for (const a of alerts) {
     const pid = a.project ? byName.get(a.project.toLowerCase().replace(/\.(ro|com|ai|net|info)$/, "")) ?? byName.get(a.project.toLowerCase()) : undefined;
-    if (pid) rows.get(pid)!.alerts.push(a.message);
+    // explicatia pe scurt („pagina de facturi nu se deschide (Important)”); testele locale nu intra in raport
+    const e = explainAlert(a);
+    if (pid && !e.local) rows.get(pid)!.alerts.push(alertSubject(null, e));
   }
 
   for (const [pid, c] of clarity) rows.get(pid)!.clarity = { rageClicks: c.rageClicks, scriptErrors: c.scriptErrors };
@@ -279,7 +282,7 @@ export async function buildDailyReport(today = dayKey(new Date())): Promise<Dail
     projects: list.sort((a, b) => b.revenueRon - a.revenueRon || b.y.visitors - a.y.visitors || a.name.localeCompare(b.name)),
     total,
     highlights,
-    activeAlerts: alerts.length,
+    activeAlerts: alerts.filter((a) => !isLocalDevAlert(a.message)).length,
     apps,
   };
 }

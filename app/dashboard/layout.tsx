@@ -2,13 +2,14 @@ import Link from "next/link";
 import { BellRing, Cpu, LayoutGrid, LogOut, Mail, Plus, Wallet } from "lucide-react";
 import { projectsForUser, requireUser } from "@/lib/access";
 import { prisma } from "@/lib/prisma";
+import { NOT_LOCAL_ALERT } from "@/lib/alert-explain";
 import { logout } from "./actions";
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const userId = await requireUser();
   const projects = await projectsForUser(userId);
   // problemele active din toate site-urile (erori, credite, site picat), in meniu
-  const activeAlerts = await prisma.alertState.count({ where: { active: true } });
+  const activeAlerts = await prisma.alertState.count({ where: { active: true, ...NOT_LOCAL_ALERT } });
 
   return (
     <div className="min-h-screen md:flex">
