@@ -149,3 +149,32 @@ npm run dev
 5. `npm run create-admin` cu `DATABASE_URL` de producție.
 
 ⚠️ `ENCRYPTION_KEY` nu se schimbă după ce ai conectat conturi, altfel cheile salvate nu se mai pot decripta.
+
+## Inbox E-mail al aplicațiilor + API pentru robotul-operator
+
+Structura și planul pe etape: `_deploy/mydashboard-structura-20261008.md`. Doar aplicațiile (ai365, anexa1, bazadate,
+beneficiari, constelatii, invitonline, oferte, PostingClips, tiparementale, mydashboard); print are inboxul în adminul
+ShopPrint, platformele 3D vor avea panoul lor.
+
+- `lib/email-inbox/*` (portat din `print/shopprint-main`): căsuțele din `MAILBOXES_JSON` (contact@<domeniu> pe mail.<domeniu>),
+  citite prin IMAP **doar în citire** (EXAMINE + BODY.PEEK; nimic marcat, mutat sau șters pe server), incremental după UID,
+  INBOX + INBOX.Sent. Aplicația se deduce din adresa la care a scris clientul (`projects.ts`). Categorii: oameni / notificări
+  (Stripe, Google, Meta, TikTok, Resend, aplicația noastră) / newsletter / spam; „Posibil client” din cuvinte (fără AI plătit).
+  Scorul spam se citește din `X-Spam-Status: score=` (cPanel pune în `X-Spam-Score` scorul ×10).
+- `/dashboard/email`: inboxul (filtre, conversația curățată, fișierele descărcate la cerere din IMAP, răspuns). Răspunsul pleacă
+  din **aceeași căsuță** în care a venit mesajul (SMTP-ul ei), copia în INBOX.Sent al ei. Citit/rezolvat/arhivat doar în baza noastră.
+  În dreapta: plățile clientului (Transaction.customer = e-mailul), ce apare despre el în `/api/mydashboard/stats` → `recent`, alte conversații.
+- Prima pagină: caseta „Inbox” + „De făcut” (`lib/tasks.ts`: alerte active, clienți fără răspuns > 24 h, căsuțe care nu se pot citi).
+- `/api/operator/*` (`lib/operator.ts`), doar citire, `Authorization: Bearer $OPERATOR_TOKEN` (fără variabilă = 404):
+  `summary?since=24h`, `emails?unread=1&project=&view=leads|awaiting|system...`, `emails/<id>` (text, nu marchează citit),
+  `alerts`, `sales?since=`, `signups?since=`, `tasks`.
+- `/api/cron/email-sync` (CRON_SECRET), crontab la 2 minute:
+
+```cron
+*/2 * * * * CS=$(grep -E "^CRON_SECRET=" /opt/apps/mydashboard/.env | cut -d= -f2- | tr -d '"'); curl -s -o /dev/null -w "email-sync \%{http_code}\n" -X POST -H "Authorization: Bearer $CS" --max-time 110 https://mydashboard.ro/api/cron/email-sync >> /var/log/mydashboard-sync.log 2>&1
+```
+
+- Migrarea (doar tabele noi, idempotentă): `prisma/sql/2026-10-08_email_inbox.sql` cu `scripts/apply-sql.mjs`.
+- Certificatul serverelor `mail.<domeniu>` e `*.euprint.ro` (nu acoperă numele): dacă și de pe server conexiunea dă eroare de
+  certificat, se pune `"tlsInsecure": true` pe căsuță în `MAILBOXES_JSON`. De verificat: `openssl s_client -connect mail.bazadate.ro:993 -servername mail.bazadate.ro`.
+- Teste: `npx tsx scripts/check-email-inbox.ts` (reguli) și `--e2e` (IMAP/SMTP false + Postgres local, vezi antetul scriptului).

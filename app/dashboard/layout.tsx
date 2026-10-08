@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { BellRing, Cpu, LayoutGrid, LogOut, Mail, Plus, Wallet } from "lucide-react";
+import { BellRing, Cpu, Inbox, LayoutGrid, LogOut, Mail, Plus, Wallet } from "lucide-react";
 import { projectsForUser, requireUser } from "@/lib/access";
 import { prisma } from "@/lib/prisma";
 import { NOT_LOCAL_ALERT } from "@/lib/alert-explain";
@@ -10,6 +10,11 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const projects = await projectsForUser(userId);
   // problemele active din toate site-urile (erori, credite, site picat), in meniu
   const activeAlerts = await prisma.alertState.count({ where: { active: true, ...NOT_LOCAL_ALERT } });
+  // e-mailurile necitite de la oameni (0 daca migrarea inboxului nu e aplicata inca)
+  const unreadEmails = await prisma.emailThread
+    .aggregate({ _sum: { unreadCount: true }, where: { category: "inbox", unreadCount: { gt: 0 } } })
+    .then((r) => r._sum.unreadCount || 0)
+    .catch(() => 0);
 
   return (
     <div className="min-h-screen md:flex">
@@ -20,6 +25,12 @@ export default async function DashboardLayout({ children }: { children: React.Re
         <nav className="flex md:flex-col gap-1 overflow-x-auto md:overflow-visible flex-1 text-sm">
           <Link href="/dashboard" className="flex items-center gap-2 rounded-md px-2 py-1.5 text-text-2 hover:bg-bg shrink-0">
             <LayoutGrid size={16} /> Toate proiectele
+          </Link>
+          <Link href="/dashboard/email" className="flex items-center gap-2 rounded-md px-2 py-1.5 text-text-2 hover:bg-bg shrink-0">
+            <Inbox size={16} /> E-mail
+            {unreadEmails > 0 && (
+              <span className="ml-auto rounded-full bg-accent px-2 py-0.5 text-xs font-semibold text-white">{unreadEmails}</span>
+            )}
           </Link>
           <Link href="/dashboard/bani" className="flex items-center gap-2 rounded-md px-2 py-1.5 text-text-2 hover:bg-bg shrink-0">
             <Wallet size={16} /> Bani

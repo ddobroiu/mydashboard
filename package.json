@@ -11,33 +11,44 @@
     "postinstall": "prisma generate",
     "db:push": "prisma db push",
     "create-admin": "node scripts/create-admin.mjs",
-    "test": "node --test scripts/test-alert-explain.mjs"
+    "test": "node --test scripts/test-alert-explain.mjs",
+    "test:email": "tsx scripts/check-email-inbox.ts"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.1",
     "@prisma/adapter-pg": "^7.10.0",
     "@prisma/client": "^7.10.0",
     "bcryptjs": "^3.0.3",
+    "html-to-text": "^10.0.1",
+    "imapflow": "^2.3.0",
     "lucide-react": "^0.562.0",
+    "mailparser": "^3.9.37",
     "next": "16.3.6",
     "next-auth": "5.0.0-beta.32",
+    "nodemailer": "^7.0.13",
     "pg": "^8.16.3",
     "prisma": "^7.10.0",
     "react": "19.2.3",
     "react-dom": "19.2.3",
+    "sanitize-html": "^2.18.0",
     "stripe": "^22.6.2",
     "zod": "^4.2.1"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.3.3",
+    "@types/html-to-text": "^9.0.4",
+    "@types/mailparser": "^3.9.0",
     "@types/node": "^20",
+    "@types/nodemailer": "^7.0.12",
     "@types/pg": "^8.16.0",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/sanitize-html": "^2.16.2",
     "dotenv": "^17.2.3",
     "eslint": "^9",
     "eslint-config-next": "16.3.6",
     "tailwindcss": "^4.3.3",
+    "tsx": "^4.23.15",
     "typescript": "^5"
   }
 }

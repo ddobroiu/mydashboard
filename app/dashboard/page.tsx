@@ -8,6 +8,7 @@ import { addDays, dayDate, dayKey } from "@/lib/dates";
 import { getMoney } from "@/lib/money";
 import { gscClicksByProject } from "@/lib/gsc-report";
 import { Stat, Trend, nf } from "@/components/Stat";
+import InboxTodo from "@/components/InboxTodo";
 
 export const dynamic = "force-dynamic";
 
@@ -106,6 +107,8 @@ export default async function Overview() {
           <span className="font-medium">Toate site-urile merg, nicio problemă activă</span>
         </Link>
       )}
+
+      <InboxTodo />
 
       <section className="space-y-2">
         <h2 className="text-sm font-medium uppercase tracking-wide text-text-3">Azi, până acum</h2>

@@ -653,3 +653,122 @@ model AiBudget {
   monthlyUsd Decimal  @db.Decimal(10, 2)
   updatedAt  DateTime @updatedAt
 }
+
+// ─── Inboxul E-mail al aplicatiilor (/dashboard/email) ──────────────────────
+// Casutele din MAILBOXES_JSON citite prin IMAP DOAR in citire (EXAMINE + BODY.PEEK). Citit / rezolvat / arhivat /
+// spam se schimba doar aici, nu pe serverul de e-mail. project = cheia aplicatiei (bazadate, oferte...), dedusa din
+// adresa la care a scris clientul (lib/email-inbox/projects.ts). Migrarea: prisma/sql/2026-10-08_email_inbox.sql.
+model EmailMailbox {
+  id          String    @id @default(cuid())
+  address     String
+  folder      String    @default("INBOX")
+  label       String?
+  uidValidity BigInt?
+  lastUid     Int       @default(0)
+  lastSyncAt  DateTime?
+  lastError   String?
+  lastErrorAt DateTime?
+  // o singura sincronizare odata (cron + butonul „Verifica acum”)
+  lockedUntil DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([address, folder])
+}
+
+model EmailThread {
+  id             String         @id @default(cuid())
+  mailboxAddress String
+  subject        String
+  // fara Re:/Fwd:, litere mici: legarea raspunsurilor fara In-Reply-To
+  normSubject    String
+  project        String?
+  // inbox (oameni) | system (Stripe, Google, Meta, aplicatia noastra...) | bulk (newsletter, automat) | spam
+  category       String         @default("inbox")
+  // de unde vine notificarea: Stripe, Google, Meta...
+  tag            String?
+  customerEmail  String?
+  customerName   String?
+  customerPhone  String?
+  lastMessageAt  DateTime
+  lastPreview    String?
+  lastDirection  String?
+  unreadCount    Int            @default(0)
+  messageCount   Int            @default(0)
+  hasAttachments Boolean        @default(false)
+  // „Posibil client”: scor din cuvinte (pret, abonament, oferta, demo, factura...), fara AI platit
+  possibleLead   Boolean        @default(false)
+  leadScore      Int            @default(0)
+  leadSignals    String[]       @default([])
+  // open | done | archived
+  status         String         @default("open")
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  messages       EmailMessage[]
+
+  @@index([lastMessageAt])
+  @@index([customerEmail])
+  @@index([normSubject])
+  @@index([category, status])
+  @@index([project])
+}
+
+model EmailMessage {
+  id              String            @id @default(cuid())
+  threadId        String
+  mailboxAddress  String
+  folder          String?
+  uid             Int?
+  uidValidity     BigInt?
+  // in | out
+  direction       String
+  // Message-ID fara <> (dedublare)
+  messageId       String            @unique
+  inReplyTo       String?
+  references      String[]          @default([])
+  fromEmail       String?
+  fromName        String?
+  replyTo         String?
+  to              Json?
+  cc              Json?
+  subject         String?
+  project         String?
+  category        String            @default("inbox")
+  text            String?
+  // curatat (fara scripturi; imaginile externe blocate pana la „Incarca imaginile”)
+  html            String?
+  hasRemoteImages Boolean           @default(false)
+  leadScore       Int               @default(0)
+  leadSignals     String[]          @default([])
+  sentAt          DateTime
+  receivedAt      DateTime?
+  // imap | dashboard
+  source          String?
+  sendStatus      String?
+  error           String?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  thread          EmailThread       @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  attachments     EmailAttachment[]
+
+  @@index([threadId, sentAt])
+  @@index([fromEmail])
+}
+
+// Fisierele raman pe serverul de e-mail; se descarca la cerere din IMAP (BODY.PEEK)
+model EmailAttachment {
+  id        String       @id @default(cuid())
+  messageId String
+  // pozitia in mesaj (mailparser) sau partea IMAP (mesajele prea mari)
+  idx       Int?
+  partId    String?
+  filename  String
+  mime      String
+  size      Int          @default(0)
+  contentId String?
+  inline    Boolean      @default(false)
+  createdAt DateTime     @default(now())
+  message   EmailMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@index([messageId])
+}
