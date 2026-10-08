@@ -1,6 +1,7 @@
 import type { BusinessOverview, Figures } from "@/lib/overview";
 import { count, money } from "@/lib/format";
 import { Trend } from "@/components/Stat";
+import { VoiceRow } from "@/components/VoiceRow";
 import { StatusChip, TechDetails } from "@/components/BusinessCard";
 
 type Row = {
@@ -84,6 +85,11 @@ export function BusinessDetail({ b }: { b: BusinessOverview }) {
           </tbody>
         </table>
       </div>
+      {b.voice && (
+        <div className="border-t border-border px-5 py-3">
+          <VoiceRow v={b.voice} />
+        </div>
+      )}
       <div className="space-y-1 px-5 py-3 text-xs text-text-3">
         <p>
           Profit = încasări − reclame − costuri AI.{" "}

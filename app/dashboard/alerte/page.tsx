@@ -14,6 +14,7 @@ const KIND: Record<string, string> = {
   "ai-auth": "AI: cheie invalidă",
   "ai-rate": "AI: limită de cereri",
   "ai-budget": "AI: buget",
+  voice: "Voce (ElevenLabs)",
 };
 
 const SEV_STYLE: Record<string, { card: string; badge: string }> = {

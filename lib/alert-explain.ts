@@ -208,6 +208,32 @@ const byKind: Rule = (a, _p, t) => {
         who: "tu",
       };
     }
+    case "voice": {
+      // ElevenLabs (vocea din PostingClips), din lib/elevenlabs.ts; mesajul e deja pe intelesul tuturor
+      const plain = t.replace(/\s*\[[^\]]*\]\s*$/, "").trim();
+      if (/cheia|cheie|HTTP 40[13]/i.test(t) && !/caractere/i.test(t)) {
+        return {
+          title: "ElevenLabs nu mai acceptă cheia (vocea din PostingClips)",
+          what: plain,
+          customers: "Da — clipurile cu voce din PostingClips probabil nu se mai pot face.",
+          severity: "Urgent",
+          action: "Tu faci o cheie nouă în contul ElevenLabs (Profil → API Keys), iar programatorul (Claude) o pune în setări (ELEVENLABS_API_KEY).",
+          who: "amândoi",
+        };
+      }
+      const out = /rămas fără credite/i.test(t);
+      const almost = /aproape fără credite/i.test(t);
+      return {
+        title: out ? "ElevenLabs a rămas fără credite — vocea nu mai merge" : almost ? "ElevenLabs a rămas aproape fără credite (95%)" : "s-au folosit 80% din caracterele ElevenLabs",
+        what: plain,
+        customers: out
+          ? "Da — clipurile cu voce din PostingClips nu se mai pot face până la resetare."
+          : "Încă nu — vocea merge, dar se oprește când se termină caracterele lunii.",
+        severity: out ? "Urgent" : "Important",
+        action: "Tu: treci pe un plan mai mare în ElevenLabs (Subscription) sau aștepți resetarea lunară. Programatorul nu are ce repara în cod.",
+        who: "tu",
+      };
+    }
     case "ai-auth":
       return {
         title: "cheia pentru serviciul AI nu mai e acceptată",

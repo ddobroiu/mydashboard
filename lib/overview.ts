@@ -7,6 +7,8 @@ import { getGa4, ga4Property } from "@/lib/ga4";
 import { getAppStats, type AppStats } from "@/lib/app-stats";
 import { NOT_LOCAL_ALERT, explainAlert, scrubSecrets } from "@/lib/alert-explain";
 import { plainConnectionError, plainProvider } from "@/lib/plain-errors";
+import { matchProject } from "@/lib/ai-usage";
+import { elevenLabsProject, getVoiceStatus, type VoiceStatus } from "@/lib/elevenlabs";
 
 // Prima pagina si „Pe scurt” din pagina proiectului: pentru fiecare afacere, cifrele care conteaza
 // (incasari, comenzi, vizitatori, reclame, profit) pe azi / 7 / 30 de zile, plus o stare in cuvinte simple.
@@ -37,6 +39,8 @@ export type BusinessOverview = {
   lastSaleAt: Date | null;
   status: Issue;
   issues: Issue[];
+  // doar la PostingClips: vocea ElevenLabs (consum de caractere + abonament)
+  voice?: VoiceStatus;
 };
 
 const REVENUE: Provider[] = ["STRIPE", "ORDERS_DB", "OBLIO"];
@@ -118,13 +122,15 @@ export async function getOverview(projects: P[]): Promise<BusinessOverview[]> {
 
   // GA4 si statisticile aplicatiilor: in paralel, fiecare cu cache si limita de timp
   const ga4Ranges = Object.fromEntries(keys.map((k) => [k, W[k]]));
-  const [ga4, appStats] = await Promise.all([
+  const voiceFor = matchProject(elevenLabsProject(), projects)?.id ?? null;
+  const [ga4, appStats, voice] = await Promise.all([
     Promise.all(projects.map((p) => (ga4Property(p.name) ? getGa4(p.name, ga4Ranges) : Promise.resolve(null)))),
     Promise.all(
       projects.map((p) =>
         p.connections.some((c) => REVENUE.includes(c.provider)) || !p.domain ? Promise.resolve(null) : getAppStats(p.name, p.domain).catch(() => null),
       ),
     ),
+    voiceFor ? getVoiceStatus() : Promise.resolve(undefined),
   ]);
 
   return projects.map((p, i) => {
@@ -224,6 +230,7 @@ export async function getOverview(projects: P[]): Promise<BusinessOverview[]> {
       lastSaleAt: ls,
       status: issues[0] ?? good,
       issues,
+      ...(p.id === voiceFor && voice ? { voice } : {}),
     };
   });
 }

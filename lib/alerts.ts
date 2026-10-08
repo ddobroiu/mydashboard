@@ -9,7 +9,7 @@ const TO = () => process.env.ALERT_EMAIL || "contact@mydashboard.ro";
 const FROM = "mydashboard <alerte@mydashboard.ro>";
 const REPEAT_MS = 60 * 60 * 1000;
 
-export type AlertKind = "down" | "credits" | "error" | "sync" | "traffic";
+export type AlertKind = "down" | "credits" | "error" | "sync" | "traffic" | "voice";
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c] ?? c);
 

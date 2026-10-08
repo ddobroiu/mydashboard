@@ -3,6 +3,7 @@ import { addDays, dayDate, dayKey } from "@/lib/dates";
 import { convert, getRates, type Rates } from "@/lib/fx";
 import { apiAiUsdByProject } from "@/lib/ai-api-costs";
 import { reportedUsdByProject } from "@/lib/ai-usage";
+import { elevenLabsUsdByProject } from "@/lib/elevenlabs";
 import { addAmount, negAmounts, scaleAmounts, sumAmounts, type Amounts } from "@/lib/metrics";
 
 // Banii pe proiect: vanzari (Stripe si celelalte incasari, minus rambursari) minus costuri
@@ -92,7 +93,7 @@ const scale = (l: MoneyLine, f: number): MoneyLine => ({
   profit: l.profit * f,
 });
 
-type P = { id: string; name: string; currency: string; organizationId: string };
+type P = { id: string; name: string; currency: string; organizationId: string; domain?: string | null };
 
 async function linesFor(projects: P[], period: Period, rates: Rates, fixedMonthlyRon: Map<string, number>, fixedMonthlyBy: Map<string, Amounts>) {
   const ids = projects.map((p) => p.id);
@@ -139,6 +140,8 @@ async function linesFor(projects: P[], period: Period, rates: Rates, fixedMonthl
   for (const r of ai) addAi(r.projectId, r._sum.costUsd);
   for (const [pid, usd] of apiAi) addAi(pid, usd);
   for (const [pid, usd] of reportedAi) addAi(pid, usd);
+  // ElevenLabs (vocea din PostingClips): abonamentul lunar impartit pe zile
+  for (const [pid, usd] of elevenLabsUsdByProject(projects, period.since, period.until)) addAi(pid, usd);
   for (const r of ads) {
     const l = lines.get(r.projectId)!;
     l.ads += ron(r._sum.spend, r.currency);

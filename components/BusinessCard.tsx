@@ -3,6 +3,7 @@ import { AlertTriangle, ArrowRight, CheckCircle2, CircleAlert, Megaphone, Shoppi
 import type { BusinessOverview, Figures, Issue, Tone } from "@/lib/overview";
 import { count, money } from "@/lib/format";
 import { Trend } from "@/components/Stat";
+import { VoiceRow } from "@/components/VoiceRow";
 
 const CHIP: Record<Tone, { cls: string; label: string; Icon: typeof CheckCircle2 }> = {
   good: { cls: "bg-good-bg text-good", label: "Merge bine", Icon: CheckCircle2 },
@@ -143,6 +144,12 @@ export function BusinessCard({ b, period }: { b: BusinessOverview; period: "7" |
           missing={b.notes.revenue ? "fără încasări nu se poate calcula" : undefined}
         />
       </dl>
+
+      {b.voice && (
+        <div className="border-t border-border px-5 py-3">
+          <VoiceRow v={b.voice} />
+        </div>
+      )}
 
       <footer className="mt-auto space-y-2 border-t border-border px-5 py-3">
         <TechDetails issues={b.issues} />

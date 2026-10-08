@@ -44,6 +44,13 @@ Organizație (noi / mai târziu fiecare client)
   `/api/mydashboard/stats` al fiecărui proiect (max ~6 cifre pe aplicație, `h24` sau „azi” dacă aplicația nu trimite `h24`);
   facturile neemise apar cu roșu și intră primele în „Ce s-a schimbat”.
 
+- `lib/elevenlabs.ts` + `lib/integrations/elevenlabs.ts`: ElevenLabs (vocea din PostingClips). Abonamentul lunar
+  (`ELEVENLABS_MONTHLY_USD`, implicit 6 $ Starter când există cheia; 22 = Creator; 0 = nu-l socoti) e împărțit pe zile și pus la
+  costurile AI ale proiectului `ELEVENLABS_PROJECT` (implicit postingclips), deci și în profit. Consumul de caractere vine din
+  `GET /v1/user/subscription` (doar citire, gratuit; cheia `ELEVENLABS_API_KEY`, cache 1 oră) și apare pe cardul PostingClips
+  ca „Voce (ElevenLabs)” cu bară și data resetării („—” cu motivul dacă lipsește cheia). `/api/cron/sync` trimite alerte
+  (tip `voice`) la 80%, 95% și 100% — o dată pe prag pe perioadă de facturare — și când cheia e refuzată (401/403).
+
 ## Joburi programate (crontab pe server, ora UTC)
 
 ```cron
