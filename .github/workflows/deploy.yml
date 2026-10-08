@@ -52,6 +52,8 @@ jobs:
             echo "${{ secrets.ENV_CONTENTS }}" > .env
             # DATABASE_URL doar la rulare (imaginea nu il mai contine): daca ENV_CONTENTS nu il are, se ia din secretul DATABASE_URL
             if ! grep -q '^DATABASE_URL=' .env && [ -n '${{ secrets.DATABASE_URL }}' ]; then echo 'DATABASE_URL=${{ secrets.DATABASE_URL }}' >> .env; fi
+            # setari doar pe server (casute de mail, cheia robotului, ElevenLabs): .env.extra ramane intre publicari
+            if [ -f .env.extra ]; then echo "" >> .env; cat .env.extra >> .env; fi
             
             cat <<EOF > docker-compose.yml
             version: '3.8'
