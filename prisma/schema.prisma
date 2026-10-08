@@ -80,6 +80,7 @@ model Project {
   fixedCosts     FixedCost[]
   clarityDaily   ClarityDaily[]
   aiLinks        AiProjectLink[]
+  adsRules       AdsCampaignRule[]
 
   @@index([organizationId])
 }
@@ -771,4 +772,37 @@ model EmailAttachment {
   message   EmailMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
 
   @@index([messageId])
+}
+
+// Google Ads, contul comun al tuturor site-urilor: scriptul din cont (Instrumente → Scripturi) trimite aici
+// cheltuiala pe campanie pe zi (/api/ingest/google-ads-cont). Randurile brute raman aici; partea fiecarui proiect
+// se copiaza in AdSpendDaily (conexiune ascunsa, externalId „shared-google-ads”), dupa regulile AdsCampaignRule.
+model GoogleAdsAccountDaily {
+  id              String   @id @default(cuid())
+  customerId      String
+  date            DateTime @db.Date
+  campaignId      String
+  campaignName    String
+  currency        String
+  spend           Decimal  @db.Decimal(14, 2)
+  impressions     Int      @default(0)
+  clicks          Int      @default(0)
+  conversions     Decimal  @default(0) @db.Decimal(14, 2)
+  conversionValue Decimal  @default(0) @db.Decimal(14, 2)
+  updatedAt       DateTime @updatedAt
+
+  @@unique([customerId, date, campaignId])
+  @@index([date])
+}
+
+// Ce campanie apartine carui proiect: numele campaniei incepe cu `prefix` (fara majuscule/minuscule);
+// la mai multe potriviri castiga prefixul cel mai lung. Editabil din Setari → Google Ads.
+model AdsCampaignRule {
+  id        String   @id @default(cuid())
+  prefix    String   @unique
+  projectId String
+  createdAt DateTime @default(now())
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
 }

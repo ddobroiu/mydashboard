@@ -31,6 +31,8 @@ import { getMoney, parseMoneyView } from "@/lib/money";
 import { SourcesMoney } from "@/components/SourcesMoney";
 import { ClaritySection } from "@/components/ClaritySection";
 import { getClarity } from "@/lib/clarity";
+import { getOverview } from "@/lib/overview";
+import { BusinessDetail } from "@/components/BusinessDetail";
 
 export default async function ProjectPage({
   params,
@@ -72,6 +74,9 @@ export default async function ProjectPage({
     on(tab === "bani", () => getApiAiCosts(ids, since, until)),
   ]);
 
+  // „Pe scurt”: azi / 7 / 30 de zile, aceleasi cifre ca pe prima pagina
+  const overview = tab === "prezentare" ? (await getOverview([{ ...project, connections }]))[0] : null;
+
   const hasSocial = connections.some((c) => c.provider === "POSTINGCLIPS");
   const hasInvoices = connections.some((c) => c.provider === "OBLIO");
   const hasReplicate = connections.some((c) => c.provider === "REPLICATE");
@@ -95,6 +100,7 @@ export default async function ProjectPage({
 
       {tab === "prezentare" && m && traffic && (
         <>
+          {overview && <BusinessDetail b={overview} />}
           <CurrencyWarning currencies={m.currencies} currency={project.currency} />
           <KpiTiles m={m} currency={project.currency} />
           {traffic.lastHitAt && <SourcesMoney t={traffic} currency={project.currency} periodLabel={periodLabel} />}

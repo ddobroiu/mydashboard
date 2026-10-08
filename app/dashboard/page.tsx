@@ -1,208 +1,174 @@
 import Link from "next/link";
-import { AlertTriangle, ArrowRight, CheckCircle2, Mail, Wallet } from "lucide-react";
+import { AlertTriangle, CircleAlert, Megaphone, PartyPopper, Plus, ShoppingBag, TrendingUp, Wallet } from "lucide-react";
 import { projectsForUser, requireUser } from "@/lib/access";
-import { prisma } from "@/lib/prisma";
-import { NOT_LOCAL_ALERT } from "@/lib/alert-explain";
-import { addAmount, approxRon, formatAmounts, formatMoneyFine, type Amounts } from "@/lib/metrics";
-import { addDays, dayDate, dayKey } from "@/lib/dates";
-import { getMoney } from "@/lib/money";
-import { gscClicksByProject } from "@/lib/gsc-report";
-import { Stat, Trend, nf } from "@/components/Stat";
-import InboxTodo from "@/components/InboxTodo";
+import { getOverview, totals, type Tone } from "@/lib/overview";
+import { count, money } from "@/lib/format";
+import { Trend } from "@/components/Stat";
+import { BusinessCard } from "@/components/BusinessCard";
 
 export const dynamic = "force-dynamic";
 
-// Vizitatori distincti pe proiect intr-un interval
-async function visitorsByProject(ids: string[], since: string, until: string) {
-  const rows = await prisma.trackSession.groupBy({
-    by: ["projectId", "visitorId"],
-    where: { projectId: { in: ids }, date: { gte: dayDate(since), lte: dayDate(until) } },
-  });
-  const m = new Map<string, number>();
-  for (const r of rows) m.set(r.projectId, (m.get(r.projectId) ?? 0) + 1);
-  return m;
+const ORDER: Record<Tone, number> = { bad: 0, warn: 1, good: 2 };
+
+function Tile({
+  icon: Icon,
+  label,
+  value,
+  cur,
+  prev,
+  lowerIsBetter,
+  tone,
+  sub,
+}: {
+  icon: typeof Wallet;
+  label: string;
+  value: string;
+  cur: number;
+  prev: number;
+  lowerIsBetter?: boolean;
+  tone?: "good" | "bad";
+  sub?: string;
+}) {
+  return (
+    <div className="card p-4 sm:p-5">
+      <div className="flex items-center gap-2 text-sm text-text-2">
+        <span className="grid size-7 place-items-center rounded-lg bg-bg text-text-2">
+          <Icon size={15} aria-hidden />
+        </span>
+        {label}
+      </div>
+      <div className={`mt-3 truncate text-2xl font-semibold tabular sm:text-3xl ${tone === "good" ? "text-good" : tone === "bad" ? "text-bad" : ""}`}>{value}</div>
+      <div className="mt-1 flex flex-wrap items-center gap-x-2 text-xs text-text-3">
+        <Trend cur={cur} prev={prev} lowerIsBetter={lowerIsBetter} label="față de perioada dinainte" />
+        {sub && <span>{sub}</span>}
+      </div>
+    </div>
+  );
 }
 
-// Pagina principala: cum stai azi si luna asta, cu un card pe proiect
-export default async function Overview() {
+// Prima pagina: cum merge fiecare afacere, in cuvinte simple si cu cifre reale
+export default async function Overview({ searchParams }: { searchParams: Promise<{ p?: string }> }) {
   const userId = await requireUser();
+  const { p } = await searchParams;
+  const period: "7" | "30" = p === "7" ? "7" : "30";
   const projects = await projectsForUser(userId);
 
   if (projects.length === 0) {
     return (
-      <div className="card p-8 text-center space-y-3 max-w-lg mx-auto mt-12">
-        <h1 className="text-xl font-semibold">Niciun proiect încă</h1>
-        <p className="text-text-2 text-sm">Creează primul proiect (ex. tablou.net), apoi conectează Stripe și Meta Ads.</p>
+      <div className="card mx-auto mt-12 max-w-lg space-y-3 p-8 text-center">
+        <h1 className="text-xl font-semibold">Nicio afacere adăugată încă</h1>
+        <p className="text-sm text-text-2">Adaugă primul site, apoi leagă plățile (Stripe) și reclamele, ca să vezi aici cât vinzi și cât câștigi.</p>
         <Link href="/dashboard/projects/new" className="btn">
-          Proiect nou
+          <Plus size={16} /> Adaugă o afacere
         </Link>
       </div>
     );
   }
 
-  const ids = projects.map((p) => p.id);
-  const today = dayKey(new Date());
-  const yesterday = addDays(today, -1);
-  const money = await getMoney(projects, "luna");
-  const { cur, prev } = money;
-  const gscEnd = addDays(today, -1);
-
-  const [todayTx, yTx, visToday, visYesterday, visMonth, visPrevMonth, gsc, gscPrev, alerts] = await Promise.all([
-    prisma.transaction.groupBy({ by: ["currency"], where: { projectId: { in: ids }, date: dayDate(today) }, _sum: { amount: true } }),
-    prisma.transaction.groupBy({ by: ["currency"], where: { projectId: { in: ids }, date: dayDate(yesterday) }, _sum: { amount: true } }),
-    visitorsByProject(ids, today, today),
-    visitorsByProject(ids, yesterday, yesterday),
-    visitorsByProject(ids, cur.since, cur.until),
-    visitorsByProject(ids, prev.since, prev.until),
-    gscClicksByProject(ids, addDays(gscEnd, -27), gscEnd),
-    gscClicksByProject(ids, addDays(gscEnd, -55), addDays(gscEnd, -28)),
-    prisma.alertState.findMany({ where: { active: true, ...NOT_LOCAL_ALERT }, select: { project: true } }),
-  ]);
-  // pe moneda: vanzarile in euro raman in euro, cele in lei in lei
-  const byCur = (rows: { currency: string; _sum: { amount: unknown } }[]) =>
-    rows.reduce((a, r) => addAmount(a, r.currency, Number(r._sum.amount ?? 0)), {} as Amounts);
-  const salesToday = byCur(todayTx);
-  const salesYesterday = byCur(yTx);
-  const sumMap = (m: Map<string, number>) => [...m.values()].reduce((a, b) => a + b, 0);
-
-  const alertsBy = new Map<string, number>();
-  for (const a of alerts) {
-    const k = (a.project ?? "").toLowerCase();
-    alertsBy.set(k, (alertsBy.get(k) ?? 0) + 1);
-  }
-  const alertsOf = (name: string, domain: string | null) =>
-    (alertsBy.get(name.toLowerCase()) ?? 0) + (domain ? alertsBy.get(domain.toLowerCase().replace(/^www\./, "")) ?? 0 : 0);
-
-  const t = money.total;
-  const pt = money.prevTotal;
-  const cards = money.rows
-    .map((r) => {
-      const p = projects.find((x) => x.id === r.id)!;
-      return { r, p, alerts: alertsOf(p.name, p.domain) };
-    })
-    .sort((a, b) => b.alerts - a.alerts || b.r.curRon.revenue - a.r.curRon.revenue || (visMonth.get(b.p.id) ?? 0) - (visMonth.get(a.p.id) ?? 0));
+  const list = (await getOverview(projects)).sort(
+    (a, b) => ORDER[a.status.tone] - ORDER[b.status.tone] || (b.w.d30.revenue ?? -1) - (a.w.d30.revenue ?? -1) || a.name.localeCompare(b.name),
+  );
+  const cur = totals(list, period === "7" ? "d7" : "d30");
+  // sageata: doar afacerile care au si cifrele perioadei dinainte (cele citite din aplicatie n-au)
+  const comparable = list.filter((b) => b.sources.revenue !== "aplicatie");
+  const same = totals(comparable, period === "7" ? "d7" : "d30");
+  const prev = totals(comparable, period === "7" ? "p7" : "p30");
+  const today = totals(list, "azi");
+  const attention = list.flatMap((b) => b.issues.filter((i) => i.tone !== "good").map((i) => ({ b, i })));
+  const periodLabel = period === "7" ? "ultimele 7 zile" : "ultimele 30 de zile";
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold">Cum stai</h1>
-        <p className="text-sm text-text-2">
-          {new Date().toLocaleDateString("ro-RO", { weekday: "long", day: "numeric", month: "long", timeZone: "Europe/Bucharest" })} · toate proiectele, fiecare sumă în moneda ei
-        </p>
-      </div>
-
-      {alerts.length > 0 ? (
-        <Link href="/dashboard/alerte" className="flex items-center gap-3 rounded-xl border border-bad/30 bg-bad-bg px-4 py-3 text-bad hover:opacity-90">
-          <AlertTriangle size={20} className="shrink-0" />
-          <span className="font-medium">
-            {alerts.length === 1 ? "O problemă activă" : `${alerts.length} probleme active`} pe site-uri
-          </span>
-          <span className="ml-auto flex items-center gap-1 text-sm">
-            Vezi alertele <ArrowRight size={14} />
-          </span>
-        </Link>
-      ) : (
-        <Link href="/dashboard/alerte" className="flex items-center gap-3 rounded-xl border border-good/30 bg-good-bg px-4 py-3 text-good">
-          <CheckCircle2 size={20} className="shrink-0" />
-          <span className="font-medium">Toate site-urile merg, nicio problemă activă</span>
-        </Link>
-      )}
-
-      <InboxTodo />
-
-      <section className="space-y-2">
-        <h2 className="text-sm font-medium uppercase tracking-wide text-text-3">Azi, până acum</h2>
-        <div className="grid grid-cols-2 gap-3">
-          <Stat label="Vânzări azi" value={formatAmounts(salesToday)} sub={`ieri: ${formatAmounts(salesYesterday)}`} />
-          <Stat label="Vizitatori azi" value={nf(sumMap(visToday))} sub={`ieri: ${nf(sumMap(visYesterday))}`} />
+    <div className="space-y-8">
+      <header className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <p className="text-sm capitalize text-text-3">
+            {new Date().toLocaleDateString("ro-RO", { weekday: "long", day: "numeric", month: "long", timeZone: "Europe/Bucharest" })}
+          </p>
+          <h1 className="mt-1 text-2xl font-semibold sm:text-3xl">Cum merg afacerile</h1>
+          <p className="mt-1 text-sm text-text-2">
+            Azi ai încasat <strong className="tabular text-text">{money(today.revenue)}</strong>
+            {today.orders > 0 && <> din {today.orders === 1 ? "o comandă" : `${count(today.orders)} comenzi`}</>}.
+          </p>
         </div>
-      </section>
+        <nav className="inline-flex rounded-xl border border-border bg-surface p-1 text-sm" aria-label="Perioada">
+          {(["7", "30"] as const).map((v) => (
+            <Link
+              key={v}
+              href={v === "30" ? "/dashboard" : "/dashboard?p=7"}
+              className={`rounded-lg px-3 py-1.5 font-medium ${period === v ? "bg-accent text-white" : "text-text-2 hover:text-text"}`}
+              aria-current={period === v ? "page" : undefined}
+            >
+              {v === "7" ? "7 zile" : "30 de zile"}
+            </Link>
+          ))}
+        </nav>
+      </header>
 
-      <section className="space-y-2">
-        <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <h2 className="text-sm font-medium uppercase tracking-wide text-text-3">Luna asta · {cur.label}</h2>
-          <span className="text-xs text-text-3">față de {prev.label}</span>
-        </div>
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          <Stat label="Vânzări" value={formatAmounts(t.by.revenue)} cur={t.revenue} prev={pt.revenue} sub={[`${t.orders} plăți`, approxRon(t.by.revenue, t.revenue)].filter(Boolean).join(" · ")} />
-          <Stat label="Costuri" value={formatAmounts(t.by.costs)} cur={t.costs} prev={pt.costs} lowerIsBetter sub={approxRon(t.by.costs, t.costs)} />
-          <Stat
-            label={t.profit >= 0 ? "Profit" : "Pierdere"}
-            value={formatAmounts(t.by.profit)}
-            tone={t.profit >= 0 ? "good" : "bad"}
-            cur={t.profit}
-            prev={pt.profit}
-            sub={approxRon(t.by.profit, t.profit)}
+      <section aria-label="Toate afacerile împreună" className="space-y-3">
+        <h2 className="text-sm font-medium text-text-3">Toate afacerile împreună · {periodLabel} · în lei</h2>
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <Tile icon={Wallet} label="Încasări" value={money(cur.revenue)} cur={same.revenue} prev={prev.revenue} />
+          <Tile icon={Megaphone} label="Cheltuit pe reclame" value={money(cur.ads)} cur={same.ads} prev={prev.ads} lowerIsBetter />
+          <Tile
+            icon={TrendingUp}
+            label={cur.profit < 0 ? "Pierdere" : "Profit"}
+            value={money(cur.profit)}
+            cur={same.profit}
+            prev={prev.profit}
+            tone={cur.profit >= 0 ? "good" : "bad"}
+            sub={cur.ai > 0 ? `după reclame și ${money(cur.ai)} AI` : "după reclame"}
           />
-          <Stat label="Vizitatori" value={nf(sumMap(visMonth))} cur={sumMap(visMonth)} prev={sumMap(visPrevMonth)} />
-        </div>
-        <div className="flex flex-wrap gap-2 pt-1">
-          <Link href="/dashboard/bani" className="btn btn-ghost text-sm">
-            <Wallet size={14} /> Toate proiectele — bani
-          </Link>
-          <Link href="/dashboard/raport" className="btn btn-ghost text-sm">
-            <Mail size={14} /> Raportul de dimineață
-          </Link>
+          <Tile icon={ShoppingBag} label="Comenzi" value={count(cur.orders)} cur={same.orders} prev={prev.orders} sub={cur.orders > 0 ? `în medie ${money(cur.revenue / cur.orders)}` : undefined} />
         </div>
       </section>
 
-      <section className="space-y-2">
-        <h2 className="text-sm font-medium uppercase tracking-wide text-text-3">Pe proiect, luna asta</h2>
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          {cards.map(({ r, p, alerts: n }) => {
-            const v = visMonth.get(p.id) ?? 0;
-            const g = gsc.get(p.id);
-            const gp = gscPrev.get(p.id);
-            const money = (x: number) => formatMoneyFine(x, r.currency);
-            return (
-              <Link key={p.id} href={`/dashboard/projects/${p.id}`} className="card block p-4 hover:border-accent">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <div className="truncate font-semibold">{p.name}</div>
-                    {p.domain && <div className="truncate text-xs text-text-3">{p.domain}</div>}
-                  </div>
-                  {n > 0 ? (
-                    <span className="shrink-0 rounded-full bg-bad-bg px-2 py-0.5 text-xs font-medium text-bad">
-                      {n === 1 ? "1 alertă" : `${n} alerte`}
-                    </span>
-                  ) : (
-                    <span className="shrink-0 rounded-full bg-good-bg px-2 py-0.5 text-xs text-good">OK</span>
-                  )}
-                </div>
-                <dl className="mt-3 grid grid-cols-3 gap-2 text-sm">
-                  <div>
-                    <dt className="text-xs text-text-3">Vânzări</dt>
-                    <dd className="font-semibold tabular">{money(r.cur.revenue)}</dd>
-                    <dd>
-                      <Trend cur={r.cur.revenue} prev={r.prev.revenue} />
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-xs text-text-3">Vizitatori</dt>
-                    <dd className="font-semibold tabular">{nf(v)}</dd>
-                    <dd>
-                      <Trend cur={v} prev={visPrevMonth.get(p.id) ?? 0} />
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-xs text-text-3">{r.cur.profit >= 0 ? "Profit" : "Pierdere"}</dt>
-                    <dd className={`font-semibold tabular ${r.cur.profit >= 0 ? "text-good" : "text-bad"}`}>{money(r.cur.profit)}</dd>
-                  </div>
-                </dl>
-                <div className="mt-3 border-t border-border pt-2 text-xs text-text-2">
-                  {g && g.clicks + (gp?.clicks ?? 0) > 0 ? (
-                    <span className="inline-flex flex-wrap items-center gap-1.5">
-                      Clicuri din Google (28 zile): <strong className="tabular">{nf(g.clicks)}</strong>
-                      {gp && gp.days > 0 && <Trend cur={g.clicks} prev={gp.clicks} />}
-                    </span>
-                  ) : (
-                    <span className="text-text-3">Încă fără clicuri din Google</span>
-                  )}
-                </div>
+      <section aria-label="De văzut" className="space-y-3">
+        {attention.length === 0 ? (
+          <div className="flex items-center gap-3 rounded-2xl border border-good/30 bg-good-bg px-5 py-4 text-good">
+            <PartyPopper size={20} className="shrink-0" aria-hidden />
+            <span className="font-medium">Totul merge. Nicio problemă de rezolvat acum.</span>
+          </div>
+        ) : (
+          <div className="card divide-y divide-border">
+            <h2 className="px-5 py-3 text-sm font-semibold">
+              {attention.length === 1 ? "Un lucru de văzut" : `${attention.length} lucruri de văzut`}
+            </h2>
+            {attention.slice(0, 6).map(({ b, i }, n) => (
+              <Link key={`${b.id}-${n}`} href={`/dashboard/projects/${b.id}`} className="flex items-start gap-3 px-5 py-3 hover:bg-bg">
+                {i.tone === "bad" ? (
+                  <AlertTriangle size={18} className="mt-0.5 shrink-0 text-bad" aria-hidden />
+                ) : (
+                  <CircleAlert size={18} className="mt-0.5 shrink-0 text-warn" aria-hidden />
+                )}
+                <span className="min-w-0 text-sm">
+                  <strong>{b.name}:</strong> {i.text}
+                  {i.action && <span className="block text-xs text-text-2">{i.action}</span>}
+                </span>
               </Link>
-            );
-          })}
+            ))}
+            {attention.length > 6 && (
+              <Link href="/dashboard/alerte" className="block px-5 py-3 text-sm text-accent hover:underline">
+                Vezi toate în Alerte
+              </Link>
+            )}
+          </div>
+        )}
+      </section>
+
+      <section aria-label="Fiecare afacere" className="space-y-3">
+        <h2 className="text-sm font-medium text-text-3">Fiecare afacere · comenzi, vizitatori, reclame și profit pe {periodLabel}</h2>
+        <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
+          {list.map((b) => (
+            <BusinessCard key={b.id} b={b} period={period} />
+          ))}
         </div>
+        <p className="text-xs leading-relaxed text-text-3">
+          Profit = încasări − reclame − costuri AI. Comisioanele Stripe și costurile fixe (server, abonamente) sunt în pagina{" "}
+          <Link href="/dashboard/bani" className="underline">
+            Bani
+          </Link>
+          . Vizitatorii vin din Google Analytics unde e legat, altfel din codul nostru de măsurare. „—” înseamnă că nu avem cifra, nu că e zero.
+        </p>
       </section>
     </div>
   );

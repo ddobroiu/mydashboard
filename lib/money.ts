@@ -155,6 +155,11 @@ async function linesFor(projects: P[], period: Period, rates: Rates, fixedMonthl
   return lines;
 }
 
+// Banii pe un interval oarecare (ex. ultimele 7 / 30 de zile), in lei, fara costurile fixe lunare
+export async function moneyForRange(projects: P[], since: string, until: string, rates?: Rates) {
+  return linesFor(projects, { since, until, label: "", fixedShare: 0 }, rates ?? (await getRates()), new Map(), new Map());
+}
+
 export async function getMoney(projects: P[], view: MoneyView) {
   const { cur, prev } = moneyPeriods(view);
   const rates = await getRates();

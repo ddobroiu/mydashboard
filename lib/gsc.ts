@@ -24,9 +24,12 @@ function serviceAccount(): ServiceAccount | null {
 
 export const gscConfigured = () => Boolean(process.env.GSC_SERVICE_ACCOUNT_JSON || process.env.GSC_SERVICE_ACCOUNT_FILE);
 
-let cached: { token: string; exp: number } | null = null;
+const WEBMASTERS = "https://www.googleapis.com/auth/webmasters.readonly";
+const tokens = new Map<string, { token: string; exp: number }>();
 
-async function accessToken(): Promise<string> {
+// Tokenul robotului pentru un scope (Search Console; si Google Analytics in lib/ga4.ts, cu acelasi robot)
+export async function accessToken(scope = WEBMASTERS): Promise<string> {
+  const cached = tokens.get(scope);
   if (cached && cached.exp > Date.now() + 60_000) return cached.token;
   const k = serviceAccount();
   if (!k) throw new Error("Lipsește cheia Search Console (GSC_SERVICE_ACCOUNT_FILE sau GSC_SERVICE_ACCOUNT_JSON)");
@@ -34,7 +37,7 @@ async function accessToken(): Promise<string> {
   const now = Math.floor(Date.now() / 1000);
   const unsigned = `${enc({ alg: "RS256", typ: "JWT" })}.${enc({
     iss: k.client_email,
-    scope: "https://www.googleapis.com/auth/webmasters.readonly",
+    scope,
     aud: "https://oauth2.googleapis.com/token",
     iat: now,
     exp: now + 3600,
@@ -47,8 +50,8 @@ async function accessToken(): Promise<string> {
   });
   const data = (await res.json().catch(() => ({}))) as { access_token?: string; expires_in?: number; error?: string };
   if (!res.ok || !data.access_token) throw new Error(`Google nu a dat acces (${res.status} ${data.error ?? ""})`.trim());
-  cached = { token: data.access_token, exp: Date.now() + (data.expires_in ?? 3600) * 1000 };
-  return cached.token;
+  tokens.set(scope, { token: data.access_token, exp: Date.now() + (data.expires_in ?? 3600) * 1000 });
+  return data.access_token;
 }
 
 type Row = { keys?: string[]; clicks: number; impressions: number; ctr: number; position: number };

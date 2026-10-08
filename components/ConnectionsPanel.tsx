@@ -1,3 +1,4 @@
+import { plainConnectionError } from "@/lib/plain-errors";
 import Link from "next/link";
 import { RefreshCw, Trash2 } from "lucide-react";
 import type { Connection } from "@prisma/client";
@@ -41,14 +42,20 @@ export function ConnectionsPanel({ projectId, connections, canEdit }: { projectI
                 </div>
                 <div className="text-xs text-text-3">
                   {c.status === "ERROR" ? (
-                    <span className="text-bad">Eroare: {c.lastError}</span>
+                    <span className="text-bad">
+                      {plainConnectionError(c.provider, c.lastError).what} {plainConnectionError(c.provider, c.lastError).action}
+                      <details className="text-text-3">
+                        <summary className="cursor-pointer">Detalii tehnice</summary>
+                        <span className="block break-words font-mono">{c.lastError}</span>
+                      </details>
+                    </span>
                   ) : (
                     <>
                       {c.provider === "GOOGLE_ADS" ? "Ultimele date primite" : "Ultima sincronizare"}: {fmtTime(c.lastSyncAt)}
                     </>
                   )}
                   {c.provider === "GOOGLE_ADS" && canEdit && (
-                    <Link href={`/dashboard/projects/${projectId}/google-ads?c=${c.id}`} className="ml-2 text-accent">
+                    <Link href={c.externalId === "shared-google-ads" ? "/dashboard/setari/google-ads" : `/dashboard/projects/${projectId}/google-ads?c=${c.id}`} className="ml-2 text-accent">
                       vezi scriptul
                     </Link>
                   )}

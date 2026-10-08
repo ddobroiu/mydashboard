@@ -1,5 +1,7 @@
 import Link from "next/link";
-import { BellRing, Cpu, Inbox, LayoutGrid, LogOut, Mail, Plus, Wallet } from "lucide-react";
+import { BellRing, Home, Inbox, ListTodo, LogOut, Settings, Wallet } from "lucide-react";
+
+const item = "flex items-center gap-2 rounded-lg px-2.5 py-2 text-text-2 hover:bg-bg hover:text-text shrink-0";
 import { projectsForUser, requireUser } from "@/lib/access";
 import { prisma } from "@/lib/prisma";
 import { NOT_LOCAL_ALERT } from "@/lib/alert-explain";
@@ -23,46 +25,40 @@ export default async function DashboardLayout({ children }: { children: React.Re
           MyDashboard
         </Link>
         <nav className="flex md:flex-col gap-1 overflow-x-auto md:overflow-visible flex-1 text-sm">
-          <Link href="/dashboard" className="flex items-center gap-2 rounded-md px-2 py-1.5 text-text-2 hover:bg-bg shrink-0">
-            <LayoutGrid size={16} /> Toate proiectele
+          <Link href="/dashboard" className={item}>
+            <Home size={16} /> Acasă
           </Link>
-          <Link href="/dashboard/email" className="flex items-center gap-2 rounded-md px-2 py-1.5 text-text-2 hover:bg-bg shrink-0">
-            <Inbox size={16} /> E-mail
+          <Link href="/dashboard/email" className={item}>
+            <Inbox size={16} /> Emailuri
             {unreadEmails > 0 && (
               <span className="ml-auto rounded-full bg-accent px-2 py-0.5 text-xs font-semibold text-white">{unreadEmails}</span>
             )}
           </Link>
-          <Link href="/dashboard/bani" className="flex items-center gap-2 rounded-md px-2 py-1.5 text-text-2 hover:bg-bg shrink-0">
+          <Link href="/dashboard/de-facut" className={item}>
+            <ListTodo size={16} /> De făcut
+          </Link>
+          <Link href="/dashboard/bani" className={item}>
             <Wallet size={16} /> Bani
           </Link>
-          <Link href="/dashboard/ai" className="flex items-center gap-2 rounded-md px-2 py-1.5 text-text-2 hover:bg-bg shrink-0">
-            <Cpu size={16} /> Costuri AI
-          </Link>
-          <Link href="/dashboard/alerte" className="flex items-center gap-2 rounded-md px-2 py-1.5 text-text-2 hover:bg-bg shrink-0">
+          <Link href="/dashboard/alerte" className={item}>
             <BellRing size={16} /> Alerte
             {activeAlerts > 0 && (
               <span className="ml-auto rounded-full bg-red-600 px-2 py-0.5 text-xs font-semibold text-white">{activeAlerts}</span>
             )}
           </Link>
-          <Link href="/dashboard/raport" className="flex items-center gap-2 rounded-md px-2 py-1.5 text-text-2 hover:bg-bg shrink-0">
-            <Mail size={16} /> Raport zilnic
+          <Link href="/dashboard/setari" className={item}>
+            <Settings size={16} /> Setări
           </Link>
-          <div className="hidden md:block text-xs uppercase tracking-wide text-text-3 mt-4 mb-1 px-2">Proiecte</div>
+          <div className="hidden md:block text-xs uppercase tracking-wide text-text-3 mt-5 mb-1 px-2">Afaceri</div>
           {projects.map((p) => (
             <Link
               key={p.id}
               href={`/dashboard/projects/${p.id}`}
-              className="rounded-md px-2 py-1.5 text-text-2 hover:bg-bg truncate shrink-0"
+              className="hidden md:block rounded-md px-2 py-1.5 text-text-2 hover:bg-bg truncate"
             >
               {p.name}
             </Link>
           ))}
-          <Link
-            href="/dashboard/projects/new"
-            className="flex items-center gap-2 rounded-md px-2 py-1.5 text-accent hover:bg-bg shrink-0"
-          >
-            <Plus size={16} /> Proiect nou
-          </Link>
         </nav>
         <form action={logout}>
           <button className="flex items-center gap-2 text-sm text-text-3 hover:text-text px-2">
