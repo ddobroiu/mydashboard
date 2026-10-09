@@ -1,7 +1,7 @@
 import Link from "next/link";
-import { AlertTriangle, ArrowRight, Eye, Megaphone, Plus, ShoppingBag, Users, Wallet } from "lucide-react";
+import { AlertTriangle, ArrowRight, Eye, Megaphone, Plus, ShoppingBag, UserPlus, Users, Wallet } from "lucide-react";
 import { projectsForUser, requireUser } from "@/lib/access";
-import { ago, getOverview, totals, windows, type BusinessOverview, type WindowKey } from "@/lib/overview";
+import { ago, getOverview, totals, windows, type BusinessOverview, type LinkKey, type WindowKey } from "@/lib/overview";
 import { getRates } from "@/lib/fx";
 import { getTraffic } from "@/lib/tracking/report";
 import { adsByPlatform, recentPayments, socialSummary } from "@/lib/home";
@@ -57,6 +57,16 @@ function Section({ title, link, children }: { title: string; link?: { href: stri
   );
 }
 
+const LINKS: { key: LinkKey; label: string; fix: string }[] = [
+  { key: "plati", label: "Plăți", fix: "Leagă Stripe sau comenzile din pagina proiectului" },
+  { key: "conturi", label: "Conturi noi", fix: "Aplicația trebuie să trimită statisticile (programatorul)" },
+  { key: "googleAds", label: "Google Ads", fix: "Scriptul Google Ads din Setări → Google Ads" },
+  { key: "metaAds", label: "Facebook Ads", fix: "Leagă contul de reclame Meta" },
+  { key: "vizitatori", label: "Vizitatori", fix: "Codul de măsurare pe site sau Google Analytics" },
+  { key: "postari", label: "Postări", fix: "Leagă PostingClips sau postările automate" },
+];
+const signupsOf = (b: BusinessOverview, k: WindowKey) => (k === "azi" ? b.signups?.azi : k === "d7" ? b.signups?.d7 : k === "d30" ? b.signups?.d30 : null) ?? null;
+
 const dot = (b: BusinessOverview) => (b.status.tone === "bad" ? "bg-bad" : b.status.tone === "warn" ? "bg-warn" : "bg-good");
 
 // Prima pagina: totul pe un singur ecran, simplu. Cat am incasat, de unde vin clientii, cat costa reclamele,
@@ -102,6 +112,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
   const maxVisitors = Math.max(0, ...channels.map((c) => c.visitors));
   const adRevenue = (name: string) =>
     traffic.simple.find((c) => c.channel === (name === "Google Ads" ? "Google Ads" : name === "Facebook / Instagram" ? "Facebook / Instagram" : "Alte reclame"))?.revenue ?? 0;
+  const signupTotal = list.reduce((sum, b) => sum + (signupsOf(b, k) ?? 0), 0);
   const rows = [...list].sort((a, b) => (b.w[k].revenue ?? -1) - (a.w[k].revenue ?? -1) || a.name.localeCompare(b.name));
 
   return (
@@ -115,7 +126,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
             {money(cur.revenue)} încasați {LABEL[period]}
           </h1>
           <p className="mt-1 text-sm text-text-2">
-            {cur.orders === 1 ? "o comandă" : `${count(cur.orders)} comenzi`} · {money(adsTotal)} pe reclame · {count(traffic.visitors || cur.visitors)} vizitatori
+            {cur.orders === 1 ? "o comandă" : `${count(cur.orders)} comenzi`} · {count(signupTotal)} conturi noi · {money(adsTotal)} pe reclame · {count(traffic.visitors || cur.visitors)} vizitatori
             {social.views > 0 && <> · {count(social.views)} vizualizări la postări</>}
           </p>
         </div>
@@ -143,10 +154,11 @@ export default async function Overview({ searchParams }: { searchParams: Promise
         </Link>
       )}
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
         <Big icon={Wallet} label="Încasat" value={money(cur.revenue)} cur={same.revenue} prev={prev?.revenue ?? null} />
         <Big icon={ShoppingBag} label="Comenzi" value={count(cur.orders)} cur={same.orders} prev={prev?.orders ?? null} sub={cur.orders > 0 ? `în medie ${money(cur.revenue / cur.orders)}` : undefined} />
         <Big icon={Megaphone} label="Reclame" value={money(adsTotal)} cur={same.ads} prev={prev?.ads ?? null} lowerIsBetter sub={ads.map((a) => `${a.platform.split(" ")[0]} ${money(a.spend)}`).join(" · ") || undefined} />
+        <Big icon={UserPlus} label="Conturi noi" value={count(signupTotal)} cur={signupTotal} prev={null} sub="din aplicații" />
         <Big icon={Users} label="Vizitatori" value={count(traffic.visitors || cur.visitors)} cur={same.visitors} prev={prev?.visitors ?? null} />
       </div>
 
@@ -270,6 +282,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
                 <th className="px-5 py-2 text-left font-normal">Afacerea</th>
                 <th className="px-3 py-2 text-right font-normal">Încasat</th>
                 <th className="px-3 py-2 text-right font-normal">Comenzi</th>
+                <th className="px-3 py-2 text-right font-normal">Conturi noi</th>
                 <th className="px-3 py-2 text-right font-normal">Reclame</th>
                 <th className="px-3 py-2 text-right font-normal">Profit</th>
                 <th className="px-3 py-2 text-right font-normal">Vizitatori</th>
@@ -289,6 +302,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
                     </td>
                     <td className="px-3 py-2.5 text-right tabular">{f.revenue === null ? "—" : money(f.revenue)}</td>
                     <td className="px-3 py-2.5 text-right tabular">{f.orders === null ? "—" : count(f.orders)}</td>
+                    <td className="px-3 py-2.5 text-right tabular">{signupsOf(b, k) === null ? "—" : count(signupsOf(b, k)!)}</td>
                     <td className="px-3 py-2.5 text-right tabular">{f.ads ? money(f.ads) : "—"}</td>
                     <td className={`px-3 py-2.5 text-right font-medium tabular ${f.profit === null ? "" : f.profit >= 0 ? "text-good" : "text-bad"}`}>
                       {f.profit === null ? "—" : money(f.profit)}
@@ -301,6 +315,45 @@ export default async function Overview({ searchParams }: { searchParams: Promise
             </tbody>
           </table>
         </div>
+      </Section>
+
+      <Section title="Ce e legat la fiecare afacere">
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[720px] text-sm">
+            <thead className="text-xs text-text-3">
+              <tr className="border-b border-border">
+                <th className="px-5 py-2 text-left font-normal">Afacerea</th>
+                {LINKS.map((l) => (
+                  <th key={l.key} className="px-3 py-2 text-center font-normal">{l.label}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {[...list].sort((a, b) => a.name.localeCompare(b.name)).map((b) => (
+                <tr key={b.id} className="hover:bg-bg">
+                  <td className="px-5 py-2.5">
+                    <Link href={`/dashboard/projects/${b.id}`} className="font-medium hover:underline">{b.name}</Link>
+                  </td>
+                  {LINKS.map((l) => {
+                    const st = b.links[l.key];
+                    const tone = st.state === "ok" ? "bg-good" : st.state === "error" ? "bg-bad" : "bg-border";
+                    const title = st.state === "ok" ? `Legat${st.note ? ` (${st.note})` : ""}` : st.state === "error" ? `Eroare: ${st.note ?? ""}` : `Nelegat. ${l.fix}`;
+                    return (
+                      <td key={l.key} className="px-3 py-2.5 text-center" title={title}>
+                        <span className={`inline-block size-3 rounded-full ${tone}`} aria-label={title} />
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <p className="border-t border-border px-5 py-2 text-xs text-text-3">
+          <span className="mr-1 inline-block size-2 rounded-full bg-good" /> primim date ·{" "}
+          <span className="mx-1 inline-block size-2 rounded-full bg-bad" /> legat, dar dă eroare ·{" "}
+          <span className="mx-1 inline-block size-2 rounded-full bg-border" /> nelegat. Ține mouse-ul pe bulină ca să vezi ce lipsește.
+        </p>
       </Section>
 
       <p className="text-xs text-text-3">

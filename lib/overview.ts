@@ -44,7 +44,14 @@ export type BusinessOverview = {
   voice?: VoiceStatus;
   // Postarile de pe retelele sociale din ultimele 7 zile (PostingClips + postarile automate FB/IG)
   social: { posts: number; views: number };
+  // Conturi noi din aplicatie (/api/mydashboard/stats), null = aplicatia nu le raporteaza
+  signups: { azi: number | null; d7: number | null; d30: number | null; total: number | null } | null;
+  // Ce sursa de date e legata: ok = primim date, error = legata dar da eroare, missing = nelegata
+  links: Record<LinkKey, LinkState>;
 };
+
+export type LinkKey = "plati" | "conturi" | "googleAds" | "metaAds" | "vizitatori" | "postari";
+export type LinkState = { state: "ok" | "error" | "missing"; note?: string };
 
 const REVENUE: Provider[] = ["STRIPE", "ORDERS_DB", "OBLIO"];
 const ADS: Provider[] = ["META", "GOOGLE_ADS", "TIKTOK", "MANUAL"];
@@ -109,11 +116,12 @@ export async function getOverview(projects: P[]): Promise<BusinessOverview[]> {
   const keys = Object.keys(W) as WindowKey[];
   const rates = await getRates();
 
-  const [lines, visitors, lastSales, tracked, alerts, social] = await Promise.all([
+  const [lines, visitors, lastSales, tracked, adRows, alerts, social] = await Promise.all([
     Promise.all(keys.map((k) => moneyForRange(projects, W[k].since, W[k].until, rates))),
     Promise.all(keys.map((k) => uniqueVisitors(ids, W[k].since, W[k].until))),
     prisma.transaction.groupBy({ by: ["projectId"], where: { projectId: { in: ids }, amount: { gt: 0 } }, _max: { occurredAt: true } }),
     prisma.trackSession.groupBy({ by: ["projectId"], where: { projectId: { in: ids }, date: { gte: dayDate(W.p30.since) } }, _count: { _all: true } }),
+    prisma.adSpendDaily.groupBy({ by: ["projectId", "provider"], where: { projectId: { in: ids }, date: { gte: dayDate(W.p30.since) } }, _sum: { spend: true } }),
     prisma.alertState.findMany({
       where: { active: true, ...NOT_LOCAL_ALERT },
       select: { kind: true, project: true, message: true, explanation: true, updatedAt: true },
@@ -131,7 +139,7 @@ export async function getOverview(projects: P[]): Promise<BusinessOverview[]> {
     Promise.all(projects.map((p) => (ga4Property(p.name) ? getGa4(p.name, ga4Ranges) : Promise.resolve(null)))),
     Promise.all(
       projects.map((p) =>
-        p.connections.some((c) => REVENUE.includes(c.provider)) || !p.domain ? Promise.resolve(null) : getAppStats(p.name, p.domain).catch(() => null),
+        !p.domain ? Promise.resolve(null) : getAppStats(p.name, p.domain).catch(() => null),
       ),
     ),
     voiceFor ? getVoiceStatus() : Promise.resolve(undefined),
@@ -141,7 +149,10 @@ export async function getOverview(projects: P[]): Promise<BusinessOverview[]> {
     const hasRevenue = p.connections.some((c) => REVENUE.includes(c.provider));
     const hasAds = p.connections.some((c) => ADS.includes(c.provider) && c.provider !== "MANUAL");
     const g = ga4[i];
-    const app = appStats[i]?.ok ? appFigures(appStats[i].stats) : null;
+    const appRes = appStats[i];
+    const app = appRes?.ok && !hasRevenue ? appFigures(appRes.stats) : null;
+    const usersKpi = appRes?.ok ? appRes.stats.kpi.find((k) => k.key === "users") ?? appRes.stats.kpi.find((k) => /conturi noi|utilizatori noi|înscrieri/i.test(k.label)) : undefined;
+    const signups = usersKpi ? { azi: usersKpi.today ?? usersKpi.h24 ?? null, d7: usersKpi.d7 ?? null, d30: usersKpi.d30 ?? null, total: usersKpi.total ?? null } : null;
     const notes: BusinessOverview["notes"] = {};
     const sources: BusinessOverview["sources"] = { revenue: null, visitors: null };
 
@@ -222,8 +233,29 @@ export async function getOverview(projects: P[]): Promise<BusinessOverview[]> {
       action: ls ? `Ultima vânzare: ${ago(ls)}.` : sources.revenue ? "Încă nicio vânzare înregistrată." : undefined,
     };
 
+    const conn = (prov: Provider) => p.connections.find((c) => c.provider === prov);
+    const spent = (prov: Provider) => adRows.some((r) => r.projectId === p.id && r.provider === prov && Number(r._sum.spend ?? 0) > 0);
+    const linkOf = (prov: Provider): LinkState => {
+      const c = conn(prov);
+      if (spent(prov)) return { state: "ok" };
+      if (c?.status === "ERROR") return { state: "error", note: plainConnectionError(prov, c.lastError).what };
+      return c ? { state: "ok", note: "legat, fără cheltuieli în 30 de zile" } : { state: "missing" };
+    };
+    const revConn = p.connections.filter((c) => REVENUE.includes(c.provider));
+    const soc = social.get(p.id);
+    const links: Record<LinkKey, LinkState> = {
+      plati: revConn.some((c) => c.status === "ERROR") ? { state: "error", note: "o conexiune de plăți dă eroare" } : revConn.length || app?.money ? { state: "ok" } : { state: "missing" },
+      conturi: signups ? { state: "ok" } : appRes && !appRes.ok && appRes.reason === "error" ? { state: "error", note: "aplicația dă eroare la statistici" } : { state: "missing" },
+      googleAds: linkOf("GOOGLE_ADS"),
+      metaAds: linkOf("META"),
+      vizitatori: sources.visitors ? { state: "ok" } : { state: "missing", note: notes.visitors },
+      postari: soc && soc.posts > 0 ? { state: "ok" } : p.connections.some((c) => c.provider === "POSTINGCLIPS" || c.provider === "SOCIAL_AUTOPOST") ? { state: "ok", note: "legat, nicio postare în 7 zile" } : { state: "missing" },
+    };
+
     return {
       id: p.id,
+      signups,
+      links,
       name: p.name,
       domain: p.domain,
       currency: p.currency,
