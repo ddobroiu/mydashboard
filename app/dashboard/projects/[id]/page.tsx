@@ -33,6 +33,8 @@ import { ClaritySection } from "@/components/ClaritySection";
 import { getClarity } from "@/lib/clarity";
 import { getOverview } from "@/lib/overview";
 import { BusinessDetail } from "@/components/BusinessDetail";
+import { CostInvoicesSection } from "@/components/CostInvoicesSection";
+import { getCostInvoices } from "@/lib/cost-invoices";
 
 export default async function ProjectPage({
   params,
@@ -55,7 +57,7 @@ export default async function ProjectPage({
   const moneyView = parseMoneyView(sp.m);
 
   // Fiecare tab citeste doar ce afiseaza
-  const [m, social, traffic, invoices, ai, sites, google, money, orgSize, connections, clarity, apiAi] = await Promise.all([
+  const [m, social, traffic, invoices, ai, sites, google, money, orgSize, connections, clarity, apiAi, costInvoices] = await Promise.all([
     on(tab === "prezentare" || tab === "reclame" || tab === "bani", () => getMetrics(ids, since, until)),
     on(tab === "social" || tab === "bani", () => getSocialMetrics(ids, since, until)),
     on(tab === "prezentare" || tab === "trafic", () => getTraffic(ids, since, until)),
@@ -72,6 +74,7 @@ export default async function ProjectPage({
     }),
     on(tab === "trafic", () => getClarity(project.id, since, until)),
     on(tab === "bani", () => getApiAiCosts(ids, since, until)),
+    on(tab === "bani", () => getCostInvoices(project)),
   ]);
 
   // „Pe scurt”: azi / 7 / 30 de zile, aceleasi cifre ca pe prima pagina
@@ -172,6 +175,7 @@ export default async function ProjectPage({
           />
           {hasApiAi && <ApiAiCostSection ai={apiAi} />}
           {hasReplicate && <AiCostSection ai={ai} revenue={m.revenue} currency={project.currency} />}
+          <CostInvoicesSection rows={costInvoices} projectId={project.id} canEdit={role !== "VIEWER"} today={new Date().toISOString().slice(0, 10)} />
         </>
       )}
       {tab === "conexiuni" && (

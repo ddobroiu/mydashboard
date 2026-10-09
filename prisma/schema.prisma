@@ -32,6 +32,7 @@ model Organization {
   projects    Project[]
   fixedCosts  FixedCost[]
   aiAccounts  AiAccount[]
+  costInvoices CostInvoice[]
 }
 
 enum Role {
@@ -78,6 +79,7 @@ model Project {
   gscDaily       GscDaily[]
   gscTop         GscTop[]
   fixedCosts     FixedCost[]
+  costInvoices   CostInvoice[]
   clarityDaily   ClarityDaily[]
   aiLinks        AiProjectLink[]
   adsRules       AdsCampaignRule[]
@@ -547,6 +549,44 @@ model FixedCost {
 
   @@index([organizationId])
   @@index([projectId])
+}
+
+// ─── Facturi de cost (furnizori: servere, domenii, AI, reclame...) ───────────
+// Evidenta documentelor: factura primita + PDF-ul ei. NU intra in totalurile din Bani (acolo costurile vin
+// din FixedCost / reclame / AI), ca sa nu se numere de doua ori. projectId null = cost comun.
+// sourceKey = cheia importului (ex. „yahoo:<Message-ID>:<hash fisier>”), ca importul sa nu dubleze.
+model CostInvoice {
+  id             String           @id @default(cuid())
+  organizationId String
+  projectId      String?
+  supplier       String
+  category       String           @default("altele")
+  number         String?
+  issueDate      DateTime         @db.Date
+  total          Decimal          @db.Decimal(14, 2)
+  vat            Decimal?         @db.Decimal(14, 2)
+  currency       String           @default("RON")
+  note           String?
+  source         String           @default("manual")
+  sourceKey      String?          @unique
+  fileName       String?
+  fileMime       String?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  organization   Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  project        Project?         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  file           CostInvoiceFile?
+
+  @@index([organizationId, issueDate])
+  @@index([projectId, issueDate])
+}
+
+// Fisierul facturii (PDF / XML / imagine, max 15 MB), separat ca listele sa nu-l citeasca
+model CostInvoiceFile {
+  invoiceId String      @id
+  data      Bytes
+  size      Int
+  invoice   CostInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
 }
 
 // ─── NextAuth ───────────────────────────────────────────────────────────────
