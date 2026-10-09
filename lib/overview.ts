@@ -9,6 +9,7 @@ import { NOT_LOCAL_ALERT, explainAlert, scrubSecrets } from "@/lib/alert-explain
 import { plainConnectionError, plainProvider } from "@/lib/plain-errors";
 import { matchProject } from "@/lib/ai-usage";
 import { elevenLabsProject, getVoiceStatus, type VoiceStatus } from "@/lib/elevenlabs";
+import { socialWeek } from "@/lib/social-posts";
 
 // Prima pagina si „Pe scurt” din pagina proiectului: pentru fiecare afacere, cifrele care conteaza
 // (incasari, comenzi, vizitatori, reclame, profit) pe azi / 7 / 30 de zile, plus o stare in cuvinte simple.
@@ -41,6 +42,8 @@ export type BusinessOverview = {
   issues: Issue[];
   // doar la PostingClips: vocea ElevenLabs (consum de caractere + abonament)
   voice?: VoiceStatus;
+  // Postarile de pe retelele sociale din ultimele 7 zile (PostingClips + postarile automate FB/IG)
+  social: { posts: number; views: number };
 };
 
 const REVENUE: Provider[] = ["STRIPE", "ORDERS_DB", "OBLIO"];
@@ -106,7 +109,7 @@ export async function getOverview(projects: P[]): Promise<BusinessOverview[]> {
   const keys = Object.keys(W) as WindowKey[];
   const rates = await getRates();
 
-  const [lines, visitors, lastSales, tracked, alerts] = await Promise.all([
+  const [lines, visitors, lastSales, tracked, alerts, social] = await Promise.all([
     Promise.all(keys.map((k) => moneyForRange(projects, W[k].since, W[k].until, rates))),
     Promise.all(keys.map((k) => uniqueVisitors(ids, W[k].since, W[k].until))),
     prisma.transaction.groupBy({ by: ["projectId"], where: { projectId: { in: ids }, amount: { gt: 0 } }, _max: { occurredAt: true } }),
@@ -116,6 +119,7 @@ export async function getOverview(projects: P[]): Promise<BusinessOverview[]> {
       select: { kind: true, project: true, message: true, explanation: true, updatedAt: true },
       orderBy: { updatedAt: "desc" },
     }),
+    socialWeek(ids),
   ]);
   const lastSale = new Map(lastSales.map((r) => [r.projectId, r._max.occurredAt]));
   const hasTracker = new Set(tracked.filter((r) => r._count._all > 0).map((r) => r.projectId));
@@ -230,6 +234,7 @@ export async function getOverview(projects: P[]): Promise<BusinessOverview[]> {
       lastSaleAt: ls,
       status: issues[0] ?? good,
       issues,
+      social: social.get(p.id) ?? { posts: 0, views: 0 },
       ...(p.id === voiceFor && voice ? { voice } : {}),
     };
   });

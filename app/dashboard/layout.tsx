@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { BellRing, Home, Inbox, ListTodo, LogOut, Settings, Wallet } from "lucide-react";
+import { BellRing, Clapperboard, Home, Inbox, ListTodo, LogOut, Settings, Wallet } from "lucide-react";
 
 const item = "flex items-center gap-2 rounded-lg px-2.5 py-2 text-text-2 hover:bg-bg hover:text-text shrink-0";
 import { projectsForUser, requireUser } from "@/lib/access";
@@ -39,6 +39,9 @@ export default async function DashboardLayout({ children }: { children: React.Re
           </Link>
           <Link href="/dashboard/bani" className={item}>
             <Wallet size={16} /> Bani
+          </Link>
+          <Link href="/dashboard/postari" className={item}>
+            <Clapperboard size={16} /> Postări
           </Link>
           <Link href="/dashboard/alerte" className={item}>
             <BellRing size={16} /> Alerte

@@ -66,7 +66,7 @@ export default async function ProjectPage({
     on(tab === "bani", () => getMoney([project], moneyView)),
     on(tab === "bani", () => prisma.project.count({ where: { organizationId: project.organizationId } })),
     prisma.connection.findMany({
-      where: { projectId: project.id, provider: { not: "MANUAL" } },
+      where: { projectId: project.id, provider: { notIn: ["MANUAL", "SOCIAL_AUTOPOST"] } },
       select: { id: true, provider: true, label: true, externalId: true, status: true, lastSyncAt: true, lastError: true },
       orderBy: { createdAt: "asc" },
     }),
@@ -77,7 +77,8 @@ export default async function ProjectPage({
   // „Pe scurt”: azi / 7 / 30 de zile, aceleasi cifre ca pe prima pagina
   const overview = tab === "prezentare" ? (await getOverview([{ ...project, connections }]))[0] : null;
 
-  const hasSocial = connections.some((c) => c.provider === "POSTINGCLIPS");
+  // PostingClips legat, sau postari automate Facebook / Instagram primite de la social-autopost
+  const hasSocial = connections.some((c) => c.provider === "POSTINGCLIPS") || (social?.published ?? 0) > 0;
   const hasInvoices = connections.some((c) => c.provider === "OBLIO");
   const hasReplicate = connections.some((c) => c.provider === "REPLICATE");
   // Anthropic / OpenAI: proiectul are cel putin un workspace / proiect extern legat

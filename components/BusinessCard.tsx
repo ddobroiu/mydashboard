@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { AlertTriangle, ArrowRight, CheckCircle2, CircleAlert, Megaphone, ShoppingBag, TrendingUp, Users } from "lucide-react";
+import { AlertTriangle, ArrowRight, CheckCircle2, CircleAlert, Clapperboard, Megaphone, ShoppingBag, TrendingUp, Users } from "lucide-react";
 import type { BusinessOverview, Figures, Issue, Tone } from "@/lib/overview";
 import { count, money } from "@/lib/format";
 import { Trend } from "@/components/Stat";
@@ -144,6 +144,21 @@ export function BusinessCard({ b, period }: { b: BusinessOverview; period: "7" |
           missing={b.notes.revenue ? "fără încasări nu se poate calcula" : undefined}
         />
       </dl>
+
+      <Link
+        href={`/dashboard/postari?a=${b.id}&p=7`}
+        className="flex items-center gap-2 border-t border-border px-5 py-2.5 text-xs text-text-2 hover:bg-bg hover:text-text"
+      >
+        <Clapperboard size={14} className="shrink-0 text-text-3" aria-hidden />
+        <span className="tabular">
+          Postări 7 zile: <strong className="text-text">{count(b.social.posts)}</strong>
+          {b.social.posts > 0 && (
+            <>
+              {" "}· vizualizări <strong className="text-text">{count(b.social.views)}</strong>
+            </>
+          )}
+        </span>
+      </Link>
 
       {b.voice && (
         <div className="border-t border-border px-5 py-3">

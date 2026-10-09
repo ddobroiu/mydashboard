@@ -102,6 +102,9 @@ enum Provider {
   // Contul de organizatie Anthropic / OpenAI (Admin API key): costul real al API-urilor AI, citit o data pe zi
   ANTHROPIC_ADMIN
   OPENAI_ADMIN
+  // Postarile Facebook / Instagram publicate de _deploy/social-autopost (trimise prin /api/ingest/social).
+  // O conexiune ascunsa pe afacere, doar ca sa tina randurile SocialPost; nu se sincronizeaza.
+  SOCIAL_AUTOPOST
 }
 
 enum ConnectionStatus {

@@ -14,6 +14,7 @@ const NAMES: Partial<Record<Provider, string>> = {
   CLARITY: "Microsoft Clarity",
   ANTHROPIC_ADMIN: "Anthropic (costul AI)",
   OPENAI_ADMIN: "OpenAI (costul AI)",
+  SOCIAL_AUTOPOST: "postările automate Facebook / Instagram",
 };
 
 export const plainProvider = (p: Provider) => NAMES[p] ?? p;
