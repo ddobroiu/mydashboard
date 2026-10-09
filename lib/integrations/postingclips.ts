@@ -11,8 +11,9 @@ type ApiPost = {
   scheduledAt: string;
   publishedAt: string | null;
   platform: string;
-  account: string;
-  campaignName: string;
+  account: string | null;
+  // null cand clipul nu e intr-o campanie (ex. incarcat direct, fara campanie)
+  campaignName: string | null;
   videoId?: string;
   videoUrl?: string | null;
   caption: string | null;
@@ -50,8 +51,10 @@ export async function fetchPostingClipsPosts(c: PostingClipsCredentials, since: 
     externalId: p.id,
     status: p.status,
     platform: p.platform,
-    account: p.account,
-    campaignName: p.campaignName,
+    // Coloanele SocialPost.account / campaignName sunt NOT NULL: fara fallback,
+    // un singur clip fara campanie strica createMany si toata sincronizarea.
+    account: p.account ?? "",
+    campaignName: p.campaignName ?? "Fără campanie",
     videoId: p.videoId ?? null,
     videoUrl: p.videoUrl ?? null,
     caption: p.caption,
